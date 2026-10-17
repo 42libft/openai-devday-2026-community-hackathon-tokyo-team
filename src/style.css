@@ -1,0 +1,45 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #1b2b36;
+  background: #f4f6f7;
+  font-synthesis: none;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 40rem;
+  margin: 12vh auto;
+  padding: 1.5rem;
+}
+
+.eyebrow {
+  color: #486171;
+  font-size: 0.875rem;
+}
+
+h1 {
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  line-height: 1.35;
+}
+
+p {
+  line-height: 1.7;
+}
+
+button {
+  padding: 0.75rem 1rem;
+  border: 1px solid #214d69;
+  border-radius: 0.4rem;
+  color: #fff;
+  background: #214d69;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid #b66800;
+  outline-offset: 4px;
+}

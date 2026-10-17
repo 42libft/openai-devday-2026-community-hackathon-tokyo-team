@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
+import test from 'node:test';
+import { createServer, preview } from 'vite';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+
+function assertButtonWorks(code) {
+  const button = new EventTarget();
+  const status = { textContent: '未確認' };
+  const elements = { 'smoke-button': button, 'smoke-status': status };
+  runInNewContext(code, {
+    document: { getElementById: (id) => elements[id] },
+  });
+  button.dispatchEvent(new Event('click'));
+  assert.equal(status.textContent, 'JavaScriptの動作を確認しました。');
+}
+
+async function assertPage(base) {
+  const response = await fetch(base);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/html/);
+  const html = await response.text();
+  assert.match(html, /data-smoke="team-workspace"/);
+  assert.match(html, /id="smoke-button"/);
+  const paths = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(paths.some((path) => path.endsWith('.js')), 'JavaScript asset');
+  assert.ok(paths.some((path) => path.endsWith('.css')), 'CSS asset');
+  const assets = [];
+  for (const path of paths) {
+    const url = new URL(path, base);
+    assert.equal(url.origin, new URL(base).origin);
+    const asset = await fetch(url, {
+      headers: { Accept: path.endsWith('.css') ? 'text/css' : 'text/javascript' },
+    });
+    assert.equal(asset.status, 200, path);
+    const text = await asset.text();
+    assert.ok(text.length > 0, path);
+    if (path.endsWith('.css')) assert.match(asset.headers.get('content-type'), /text\/css/);
+    if (path.endsWith('.js')) assert.match(asset.headers.get('content-type'), /javascript/);
+    assets.push({ path, text });
+  }
+  const missing = await fetch(new URL('missing-smoke-asset.js', base));
+  assert.equal(missing.status, 404);
+  return assets;
+}
+
+test('development server serves the page and its local assets', async () => {
+  const server = await createServer({
+    root,
+    server: { host: '127.0.0.1', port: 0, strictPort: false },
+  });
+  try {
+    await server.listen();
+    const port = server.httpServer.address().port;
+    await assertPage(`http://127.0.0.1:${port}/`);
+  } finally {
+    await server.close();
+  }
+});
+
+test('built static output serves assets and the button works', async () => {
+  const server = await preview({
+    root,
+    preview: { host: '127.0.0.1', port: 0, strictPort: false },
+  });
+  try {
+    const port = server.httpServer.address().port;
+    const assets = await assertPage(`http://127.0.0.1:${port}/`);
+    const scripts = assets.filter(({ path }) => path.endsWith('.js'));
+    assert.ok(scripts.length > 0);
+    for (const { text } of scripts) assertButtonWorks(text);
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.httpServer.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test('source button responds without an external service', async () => {
+  assertButtonWorks(await readFile(new URL('../src/main.js', import.meta.url), 'utf8'));
+});
