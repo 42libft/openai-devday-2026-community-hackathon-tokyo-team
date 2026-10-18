@@ -15,6 +15,8 @@ import { loadSlideDeck } from './slides/deck.js';
 import { mountDeckUpload } from './ui/deck-upload.js';
 import './slides.css';
 import './input-status.css';
+import { mountProjection } from './ui/projection.js';
+import './projection.css';
 
 const root = document.getElementById('app');
 let controller;
@@ -29,6 +31,7 @@ let uploadedDeck = null;
 let uploadPanel;
 let upload;
 let slidePresenter;
+let projection;
 const scriptStore = createScriptStore(STEPS);
 const savedScript = scriptStore.load();
 let activeSteps = savedScript.steps;
@@ -46,6 +49,10 @@ const view = mountPresentation(root, dispatchIntent, {
 function setInputMode(mode) { inputMode = mode; inputSettings?.setMode(mode); }
 
 function dispatchIntent(type, payload = {}) {
+  if (type === 'OPEN_PROJECTION' || type === 'FULLSCREEN_PROJECTION') {
+    void projection.open({fullscreen: type === 'FULLSCREEN_PROJECTION'});
+    return;
+  }
   if (type === 'RENDER_RETRY') {
     view.setSlideError(false);
     void slidePresenter?.show(uploadedDeck, controller.getState().step);
@@ -97,8 +104,21 @@ controller = createController({
     inputSettings?.setState({phase: state.phase});
     scriptEditor?.setState({disabled: state.phase !== 'idle'});
     uploadPanel?.setState({phase: state.phase, hasDeck: Boolean(uploadedDeck)});
+    projection?.render(state, {deck: uploadedDeck, title: activeSteps[state.step]?.title});
   },
 });
+
+function switchToManual() {
+  setInputMode(null); camera?.stop(); speech?.stop();
+  const message = '音声とカメラを停止しました。画面のボタンで発表を続けられます。';
+  inputSettings?.setResult('manual', message); view.announce(message);
+}
+projection = mountProjection({
+  appShell: document.querySelector('.app-shell'), slideContainer: root.querySelector('#uploaded-slide'),
+  getState: controller.getState, onIntent: dispatchIntent, onManual: switchToManual,
+  onMessage: message => view.announce(message),
+});
+projection.render(controller.getState(), {deck: uploadedDeck, title: activeSteps[0]?.title});
 
 function applyDeck(deck) {
   const previous = uploadedDeck;
@@ -178,11 +198,8 @@ function startSpeech() {
 }
 inputSettings = mountInputSettings(root, {
   onCameraStart:startCamera,onSpeechStart:startSpeech,
-  onManual() {
-    setInputMode(null);camera?.stop();speech?.stop();
-    const message='音声とカメラを停止しました。画面のボタンで発表を続けられます。';
-    inputSettings.setResult('manual',message);view.announce(message);
-  },
+  onManual: switchToManual,
+
 });
 inputSettings.setState({phase:controller.getState().phase});
 const cameraContainer = inputSettings.cameraContainer;
