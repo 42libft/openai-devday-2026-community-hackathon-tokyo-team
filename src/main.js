@@ -14,6 +14,7 @@ const root = document.getElementById('app');
 let controller;
 let camera;
 let speech;
+let inputMode = null;
 let scriptEditor;
 const scriptStore = createScriptStore(STEPS);
 const savedScript = scriptStore.load();
@@ -37,7 +38,7 @@ function dispatchIntent(type, payload = {}) {
   }
   const previous = controller.getState();
   const next = controller.dispatch(createManualEvent(type, previous, payload));
-  if (next !== previous && (type === 'STOP' || type === 'RESTART')) { camera?.stop(); speech?.stop(); }
+  if (next !== previous && (type === 'STOP' || type === 'RESTART')) { inputMode = null; camera?.stop(); speech?.stop(); }
   if (next === previous) {
     const reason = previous.phase === 'idle'
       ? 'まず台本を確認して開始してください。'
@@ -92,6 +93,8 @@ const cameraPanel = mountCameraPanel(cameraContainer, {
       cameraPanel.setState({status: 'error', message: '「はじめから」で発表を準備してから再開してください。'});
       return;
     }
+    inputMode = 'camera';
+    speech.stop('カメラ操作へ切り替えたため音声を停止しました。声を使うときは音声の開始ボタンを押してください。');
     camera.start();
   },
   onStop: () => camera.stop(),
@@ -103,6 +106,7 @@ camera = createCameraInput({
   getState: controller.getState,
   onStatus: cameraPanel.setState,
   onDecision(event) {
+    if (inputMode !== 'camera') return false;
     const previous = controller.getState();
     const next = controller.dispatch(event);
     view.announce(next === previous
@@ -115,7 +119,11 @@ speechContainer.setAttribute('aria-label', '音声操作');
 root.prepend(speechContainer);
 const speechPanel = mountSpeechPanel(speechContainer, {
   onStart() {
+    if (!speech.supported) { speech.start(); return; }
     if (controller.getState().phase === 'idle') dispatchIntent('START');
+    if (controller.getState().phase !== 'presenting') { speech.start(); return; }
+    inputMode = 'voice';
+    camera.stop('音声操作へ切り替えたためカメラと画像送信を停止しました。手を使うときはカメラの開始ボタンを押してください。');
     speech.start();
   },
   onStop: () => speech.stop(),
@@ -124,9 +132,10 @@ speech = createSpeechInput({
   getState: controller.getState,
   onStatus: speechPanel.setState,
   onDecision(event) {
+    if (inputMode !== 'voice') return false;
     const previous = controller.getState();
     const next = controller.dispatch(event);
-    if (next !== previous && event.type === 'STOP') { camera.stop(); speech.stop(); }
+    if (next !== previous && event.type === 'STOP') { inputMode = null; camera.stop(); speech.stop(); }
     view.announce(next === previous ? '今の画面ではこの音声操作は使えません。工程や寄り道の状態を確認してください。' : next.message);
     return next !== previous;
   },
