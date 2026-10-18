@@ -61,7 +61,17 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.onstart = () => { if (current()) notify({status: 'listening', message: '聞き取り中です。「次へ」「前へ」など、操作する言葉だけを話してください。'}); };
-    recognition.onspeechstart = () => { if (current()) captured = frame(); };
+    recognition.onspeechstart = () => {
+      if (!current()) return;
+      // Results have no utterance ID. A second onset before the prior final
+      // makes their ownership ambiguous; never rebase a late result onto it.
+      if (captured) {
+        captured = null;
+        stop('前の発話を処理する前に次の声を検出したため、音声を停止しました。開始ボタンを押し直し、操作を1つずつ話してください。');
+        return;
+      }
+      captured = frame();
+    };
     recognition.onresult = event => {
       if (!current()) return;
       for (let index = Math.max(0, event.resultIndex ?? 0); index < event.results.length; index++) {
@@ -82,7 +92,8 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         }
         const intent = parseSpeechCommand(rawTranscript);
         const state = getState();
-        const stale = state.phase !== 'presenting' || state.sessionEpoch !== utterance.sessionEpoch || state.revision !== utterance.baseRevision;
+        const stale = state.phase !== 'presenting' || state.sessionEpoch !== utterance.sessionEpoch
+          || (intent?.type !== 'STOP' && state.revision !== utterance.baseRevision);
         if (!intent || stale) {
           notify({status: 'listening', transcript, message: stale ? '聞き取り中に画面が変わりました。操作する言葉をもう一度話してください。' : '対応する操作語が見つかりません。「次へ」「取り消し」など、短く話してください。'});
           continue;
@@ -94,7 +105,9 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         }
         last = {command, at: now()};
         notify({transcript});
-        const applied = onDecision({...intent, ...utterance, source: 'voice', eventId: `${runId}:${index}`});
+        const applied = onDecision({...intent, ...utterance,
+          baseRevision: intent.type === 'STOP' ? state.revision : utterance.baseRevision,
+          source: 'voice', eventId: `${runId}:${index}`});
         if (current()) notify({status: 'listening', transcript, message: applied === false ? '今の画面ではこの操作を実行できません。画面の案内を確認してください。' : '音声の操作を受け付けました。取り消しもできます。'});
       }
     };

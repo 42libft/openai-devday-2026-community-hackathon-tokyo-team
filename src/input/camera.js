@@ -3,6 +3,8 @@ const TIMEOUT_MS = 12000;
 const MIN_CONFIDENCE = 0.9;
 const ACTIONS = new Set(['NEXT', 'PREVIOUS', 'NONE']);
 const FAILURE_MESSAGES = new Map([
+  ['DECISION_REFUSED', 'AIが画像の判定を受け付けませんでした。画像送信を停止しました。映す内容を変えてカメラを再開するか、手動操作で続けてください。'],
+  ['INVALID_RESPONSE', 'AIの応答形式を確認できなかったため画像送信を停止しました。時間をおいてカメラを再開するか、手動操作で続けてください。'],
   ['NOT_CONFIGURED', 'AI接続の準備待ちです。運営側のAPIキー設定後に「カメラで開始」で再開してください。'],
   ['UPSTREAM_AUTH', 'AI接続の認証を確認中です。運営側の設定修正後に「カメラで開始」で再開してください。'],
   ['RATE_LIMITED', '利用回数の上限に達しました。1分待ってから「カメラで開始」で再開してください。'],

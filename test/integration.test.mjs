@@ -11,7 +11,7 @@ function setup(render = () => {}) {
 }
 
 function frame(state) {
-  return { step: state.step, query: state.query, resultIds: state.resultIds, selectedId: state.selectedId };
+  return { step: state.step, query: state.query, draftQuery:state.draftQuery, resultIds: state.resultIds, selectedId: state.selectedId };
 }
 
 test('real manual input, controller and state complete prepare, advance and one undo', () => {

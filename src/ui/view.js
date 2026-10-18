@@ -133,10 +133,6 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     return button;
   });
   const actionButtons = [...root.querySelectorAll('button[data-event]')];
-  let lastQuery;
-  let lastSessionEpoch;
-  let hadResume = false;
-  let hadUndo = false;
   let destroyed = false;
   const onClick = (event) => {
     const button = event.target.closest?.('button');
@@ -149,6 +145,9 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       onIntent(button.dataset.event, {});
     }
   };
+  const onEditQuery = () => {
+    if (!elements.search.disabled) onIntent('EDIT_QUERY', { query: elements.search.value });
+  };
   const onSearch = (event) => {
     event.preventDefault();
     if (!elements.searchSubmit.disabled) onIntent('SEARCH', { query: elements.search.value });
@@ -159,6 +158,7 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
   };
   root.addEventListener('click', onClick);
   elements.searchForm.addEventListener('submit', onSearch);
+  elements.search.addEventListener('input', onEditQuery);
   elements.commandForm.addEventListener('submit', onCommand);
 
   return {
@@ -230,14 +230,7 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       elements.commandHint.textContent = state.phase === 'idle' ? '「準備する」で発表を開始できます。'
         : state.phase === 'stopped' ? '「はじめから」で再準備します。停止中は進行しません。'
           : '次へ / 取り消し / 続きへ / 1枚目へ';
-      const restored = state.sessionEpoch !== lastSessionEpoch || (hadResume && !resume) || (hadUndo && !state.undoSnapshot);
-      if (state.query !== lastQuery || restored) {
-        elements.search.value = state.query ?? '';
-        lastQuery = state.query;
-      }
-      lastSessionEpoch = state.sessionEpoch;
-      hadResume = Boolean(resume);
-      hadUndo = Boolean(state.undoSnapshot);
+      if (elements.search.value !== state.draftQuery) elements.search.value = state.draftQuery ?? '';
       const resultIds = new Set(state.resultIds ?? []);
       elements.searchSummary.textContent = state.query ? `「${state.query}」の検索結果` : 'すべての資料';
       elements.resultCount.textContent = `${resultIds.size}件`;
@@ -265,6 +258,7 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       destroyed = true;
       root.removeEventListener('click', onClick);
       elements.searchForm.removeEventListener('submit', onSearch);
+      elements.search.removeEventListener('input', onEditQuery);
       elements.commandForm.removeEventListener('submit', onCommand);
     },
   };

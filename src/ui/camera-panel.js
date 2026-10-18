@@ -30,7 +30,7 @@ export function mountCameraPanel(container, { onStart, onStop, onCapture, onUndo
       <div class="camera-title-group"><span class="camera-ai-label">AI実判定</span><h2></h2></div>
       <span class="camera-state-badge"></span>
     </div>
-    <p class="camera-consent">開始するとカメラの静止画を約2秒おきにOpenAIへ送り判定します。停止で送信終了。</p>
+    <p class="camera-consent">開始すると音声操作を停止し、カメラの静止画を約2秒おきにOpenAIへ送り判定します。カメラ停止で送信終了。</p>
     <div class="camera-panel-content">
       <div class="camera-preview">
         <video muted playsinline autoplay aria-label="カメラのプレビュー"></video>
