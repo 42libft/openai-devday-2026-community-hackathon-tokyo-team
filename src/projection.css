@@ -1,0 +1,16 @@
+.projection-entry { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.projection-shell { position: fixed; inset: 0; z-index: 10000; width: 100vw; height: 100dvh; background: #000; color: #fff; overflow: hidden; }
+.projection-shell::backdrop { background: #000; }
+.projection-surface { position: absolute; inset: 0; display: grid; place-items: center; }
+.projection-surface #uploaded-slide { width: min(100vw, calc(100dvh * var(--slide-ratio, 1.777777778))); min-height: 0; max-height: 100dvh; margin: 0; aspect-ratio: var(--slide-ratio, 1.777777778); background: #000; }
+.projection-surface #uploaded-slide > canvas { display: block; width: 100%; height: 100%; object-fit: contain; }
+.projection-sample { width: min(100vw, calc(100dvh * 1.777777778)); aspect-ratio: 16 / 9; display: grid; place-items: center; background: #18283d; padding: 7vw; }
+.projection-sample h1 { font-size: clamp(20px, 5vw, 80px); text-align: center; }
+.projection-controls { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 10px; border-radius: 12px; background: #152235ed; opacity: 0; transition: opacity .15s; }
+.projection-controls:hover, .projection-controls:focus-within { opacity: 1; }
+.projection-controls button, .projection-confirm button { padding: 8px 12px; border: 1px solid #8495aa; border-radius: 7px; background: #fff; color: #172b46; }
+.projection-controls button:disabled, .projection-confirm button:disabled { opacity: .5; }
+#projection-feedback:empty { display: none; }
+#projection-feedback { width: 100%; font-size: .8rem; text-align: center; }
+.projection-confirm { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: max-content; max-width: 95%; padding: 14px; border-radius: 10px; background: #152235ed; text-align: center; }
+.projection-confirm p { margin-bottom: 8px; }

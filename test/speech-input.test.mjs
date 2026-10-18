@@ -56,6 +56,90 @@ test('explanatory or unmatched speech finishes one run and does not disable late
   h.say('前へ');assert.equal(h.state.step,0);
 });
 
+test('silent waiting before and after a command survives well beyond six seconds', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();
+  for(const command of ['次へ','前へ']) {
+    const r=h.instances.at(-1);
+    h.advance(60000);t.mock.timers.tick(60000);
+    assert.equal(r.aborted,0);
+    assert.equal(h.statuses.at(-1).status,'listening');
+    r.say(command);
+  }
+  assert.deepEqual(h.decisions.map(e=>e.type),['NEXT','PREVIOUS']);
+  assert.equal(h.state.step,0);
+});
+
+test('a silent browser end or no-speech error resumes after a delay without reusing old results', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  for(const reason of ['end','no-speech']) {
+    const h=harness({delayedAbort:true});h.voice.start();const old=h.instances[0];
+    if(reason==='end')old.onend();else old.onerror({error:'no-speech'});
+    assert.equal(h.instances.length,1,'do not restart in an immediate loop');
+    assert.equal(h.statuses.at(-1).status,'listening');
+    h.advance(250);t.mock.timers.tick(250);
+    assert.equal(h.instances.length,2);
+    old.say('次へ');h.flushAbortedEnds();
+    assert.equal(h.decisions.length,0);
+    h.advance(60000);t.mock.timers.tick(60000);h.say('次へ');
+    assert.equal(h.state.step,1);h.voice.stop();
+  }
+});
+
+test('interim results without speechstart get one deadline that later updates cannot extend', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const old=h.instances[0];
+  h.advance(60000);t.mock.timers.tick(60000);old.say('説明しています',0,false,false);
+  h.advance(5000);t.mock.timers.tick(5000);old.say('説明を続けています',0,false,false);
+  old.onspeechstart();
+  h.advance(1000);t.mock.timers.tick(1000);
+  assert.equal(old.aborted,1);assert.equal(h.decisions.length,0);
+  h.advance(250);t.mock.timers.tick(250);
+  old.say('次へ');assert.equal(h.decisions.length,0);
+  h.say('次へ');assert.equal(h.state.step,1);
+});
+
+test('pending retries are cancelled by explicit stop, disposal, presentation end or a new session', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  for(const reason of ['stop','dispose','STOP','RESTART']) {
+    const h=harness({delayedAbort:true});h.voice.start();const old=h.instances[0];
+    old.onerror({error:'no-speech'});
+    if(reason==='stop')h.voice.stop();
+    else if(reason==='dispose')h.voice.dispose();
+    else {h.manual('STOP');if(reason==='RESTART'){h.manual('RESTART');h.manual('START');}}
+    h.advance(10000);t.mock.timers.tick(10000);
+    h.flushAbortedEnds();old.say('次へ');
+    assert.equal(h.instances.length,1,reason);
+    assert.equal(h.decisions.length,0,reason);
+    assert.equal(h.statuses.at(-1).status,'stopped',reason);
+    h.voice.stop();
+  }
+});
+
+test('stopping a timed-out run cancels recovery even after explicitly starting a new mode', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness({delayedAbort:true});h.voice.start();const old=h.instances[0];old.onspeechstart();
+  h.advance(6000);t.mock.timers.tick(6000);h.voice.stop();h.voice.start();
+  const fresh=h.instances[1];h.advance(1000);t.mock.timers.tick(1000);
+  h.flushAbortedEnds();old.onerror({error:'no-speech'});old.say('次へ');
+  assert.equal(h.instances.length,2);assert.equal(fresh.aborted,0);assert.equal(h.decisions.length,0);
+  fresh.say('次へ');assert.equal(h.state.step,1);
+});
+
+test('repeated empty runs back off rather than spinning and can still accept a command', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();
+  for(const delay of [250,500,1000,2000,2000]) {
+    const count=h.instances.length;h.instances.at(-1).onend();
+    h.voice.start();h.advance(delay-1);t.mock.timers.tick(delay-1);
+    assert.equal(h.instances.length,count);
+    h.advance(1);t.mock.timers.tick(1);assert.equal(h.instances.length,count+1);
+  }
+  h.say('次へ');assert.equal(h.state.step,1);
+  const count=h.instances.length;h.instances.at(-1).onend();
+  h.advance(250);t.mock.timers.tick(250);assert.equal(h.instances.length,count+1);
+});
+
 test('a run captures its frame once, rejects state changes and never rebases a stale batch', () => {
   const h=harness();h.voice.start();const old=h.instances[0];h.manual('NEXT');
   old.onspeechstart?.();old.batch(['次へ','次へ']);
@@ -95,14 +179,12 @@ test('an earlier presentation session cannot execute a late command or trigger c
   assert.equal(h.statuses.at(-1).status,'stopped');
 });
 
-test('permission/network errors and unexpected end require explicit restart', () => {
-  for(const error of ['not-allowed','network','audio-capture','no-speech']){
+test('permission, device and network errors still require explicit restart', () => {
+  for(const error of ['not-allowed','service-not-allowed','network','audio-capture','language-not-supported','unknown']){
     const h=harness();h.voice.start();const r=h.instances[0];r.onerror({error});r.onend();
     assert.equal(r.aborted,1);assert.equal(h.instances.length,1);assert.equal(h.statuses.at(-1).status,'error');
     h.voice.start();h.say('次へ');assert.equal(h.state.step,1);h.voice.stop();
   }
-  const h=harness();h.voice.start();h.instances[0].onend();assert.equal(h.instances.length,1);
-  assert.equal(h.statuses.at(-1).status,'stopped');
 });
 
 test('unsupported recognition and construction failure remain inactive', () => {
@@ -177,13 +259,17 @@ test('successive identical commands are accepted within 1200ms in distinct recog
   assert.equal(h.state.step,2);assert.deepEqual(h.decisions.map(e=>e.type),['NEXT','NEXT']);
 });
 
-test('speech final before 6000ms applies; at or after the deadline it stops without applying', t => {
+test('speech final before 6000ms applies; at or after the deadline its run is discarded', t => {
   t.mock.timers.enable({apis:['setTimeout']});
   for(const delay of [5999,6000,6001]) {
     const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();r.say('次へ',0,false,false);
     h.advance(delay);t.mock.timers.tick(delay);
     if(delay<6000){r.say('次へ',0,true,false);assert.equal(h.state.step,1);}
-    else {assert.equal(h.statuses.at(-1).status,'error');assert.match(h.statuses.at(-1).message,/6秒/);r.say('次へ');assert.equal(h.state.step,0);assert.equal(r.aborted,1);}
+    else {
+      assert.equal(h.statuses.at(-1).status,'listening');assert.match(h.statuses.at(-1).message,/6秒/);
+      r.say('次へ');assert.equal(h.state.step,0);assert.equal(r.aborted,1);
+      h.advance(250);t.mock.timers.tick(250);h.say('次へ');assert.equal(h.state.step,1);
+    }
     h.voice.stop();
   }
 });
@@ -193,24 +279,26 @@ test('elapsed deadline rejects a final even if the timeout callback is delayed',
   const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
   h.advance(6000);r.say('次へ');
   assert.equal(h.state.step,0);assert.equal(h.decisions.length,0);assert.equal(h.instances.length,1);
-  assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');
+  assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'listening');
 });
 
-test('timeout rejects late results and old end after explicitly restarting', t => {
+test('timeout rejects late results and old end after automatically awaiting the next utterance', t => {
   t.mock.timers.enable({apis:['setTimeout']});
   const h=harness({delayedAbort:true});h.voice.start();const old=h.instances[0];old.onspeechstart();
-  h.advance(6000);t.mock.timers.tick(6000);h.voice.start();const fresh=h.instances[1];
+  h.advance(6000);t.mock.timers.tick(6000);h.voice.start();
+  assert.equal(h.instances.length,1,'explicit start does not duplicate a pending retry');
+  h.advance(250);t.mock.timers.tick(250);const fresh=h.instances[1];
   old.say('次へ');h.flushAbortedEnds();old.onerror({error:'network'});assert.equal(h.state.step,0);
   h.advance(1000);t.mock.timers.tick(1000);fresh.say('次へ',0,true,false);assert.equal(h.state.step,1);
   const count=h.statuses.length;h.advance(10000);t.mock.timers.tick(10000);
   assert.equal(h.statuses.length,count);assert.equal(fresh.aborted,0);h.voice.stop();
 });
 
-test('stop, end, error and dispose cancel the wait timer; a new run owns its deadline', t => {
+test('stop, fatal error and dispose cancel the wait timer; a new run owns its deadline', t => {
   t.mock.timers.enable({apis:['setTimeout']});
-  for(const end of ['stop','end','error','dispose']) {
+  for(const end of ['stop','error','dispose']) {
     const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
-    if(end==='stop')h.voice.stop();else if(end==='end')r.onend();else if(end==='error')r.onerror({error:'network'});else h.voice.dispose();
+    if(end==='stop')h.voice.stop();else if(end==='error')r.onerror({error:'network'});else h.voice.dispose();
     const count=h.statuses.length;t.mock.timers.tick(6001);assert.equal(h.statuses.length,count);
   }
   const h=harness();h.voice.start();h.advance(2000);t.mock.timers.tick(2000);
@@ -229,11 +317,13 @@ test('a first speech onset starts its deadline without replacing the captured fr
 test('automatic continuation owns a fresh timeout and old callbacks cannot end it', t => {
   t.mock.timers.enable({apis:['setTimeout']});
   const h=harness();h.voice.start();const old=h.instances[0];old.onspeechstart();
-  h.advance(5000);t.mock.timers.tick(5000);old.say('次へ');const fresh=h.instances[1];fresh.onspeechstart();
+  h.advance(5000);t.mock.timers.tick(5000);old.say('次へ');const fresh=h.instances[1];
   h.advance(1001);t.mock.timers.tick(1001);old.onend();old.onerror({error:'network'});old.say('次へ',1);
   assert.equal(fresh.aborted,0);assert.equal(h.decisions.length,1);assert.equal(h.instances.length,2);
-  h.advance(4999);t.mock.timers.tick(4999);assert.equal(fresh.aborted,1);assert.equal(h.instances.length,2);
-  assert.equal(h.statuses.at(-1).status,'error');
+  h.advance(60000);t.mock.timers.tick(60000);assert.equal(fresh.aborted,0);
+  fresh.onspeechstart();h.advance(6000);t.mock.timers.tick(6000);
+  assert.equal(fresh.aborted,1);assert.equal(h.instances.length,2);
+  assert.equal(h.statuses.at(-1).status,'listening');
 });
 
 
@@ -266,5 +356,5 @@ test('first nonempty interim starts one deadline and later interim or onset cann
   h.advance(10000);t.mock.timers.tick(10000);r.say('次',0,false,false);
   h.advance(5000);t.mock.timers.tick(5000);r.say('次へ',0,false,false);r.onspeechstart();
   h.advance(1000);r.say('次へ',0,true,false);
-  assert.equal(h.decisions.length,0);assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');
+  assert.equal(h.decisions.length,0);assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'listening');
 });

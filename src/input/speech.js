@@ -1,7 +1,9 @@
 import { parseCommand } from './manual.js';
 
 const FINAL_WAIT_MS = 6000;
-const WAIT_TIMEOUT_MESSAGE = '音声の確定待ちが6秒に達したため、音声を停止しました。開始ボタンを押し直し、短い操作語を話してください。';
+const RETRY_WAIT_MS = 250;
+const MAX_RETRY_WAIT_MS = 2000;
+const WAIT_TIMEOUT_MESSAGE = '6秒以内に確定しなかった発話を破棄しました。次の操作を待っています。';
 
 export const SPEECH_ACTIONS = new Set(['NEXT', 'PREVIOUS', 'UNDO', 'RESUME', 'STOP', 'REQUEST_JUMP', 'CONFIRM_JUMP', 'CANCEL_JUMP']);
 
@@ -18,7 +20,6 @@ const ERRORS = {
   'service-not-allowed': 'このブラウザでは音声認識を利用できません。Chromeなどの対応ブラウザ、または文字入力を使ってください。',
   'audio-capture': 'マイクを取得できません。接続や他のアプリでの使用状況を確認してください。',
   'network': '音声認識に接続できません。通信を確認して、音声を開始し直してください。',
-  'no-speech': '声を聞き取れず終了しました。音声を開始し直して、短く話してください。',
   'language-not-supported': 'この環境で日本語を認識できません。対応ブラウザか文字入力を使ってください。',
 };
 
@@ -28,6 +29,8 @@ export function createSpeechInput({ getState, onDecision, onStatus,
   now = Date.now, makeId = () => crypto.randomUUID(),
 }) {
   let active = null;
+  let mode = null;
+  let restartTimer = null;
   let disposed = false;
   let cancelWait = () => {};
   const supported = typeof Recognition === 'function';
@@ -35,6 +38,9 @@ export function createSpeechInput({ getState, onDecision, onStatus,
   const frame = () => { const s = getState(); return {sessionEpoch: s.sessionEpoch, baseRevision: s.revision}; };
 
   function stop(message = '音声を停止しました。再開するときは開始ボタンを押してください。') {
+    mode = null;
+    clearTimeout(restartTimer);
+    restartTimer = null;
     cancelWait();
     const previous = active;
     active = null;
@@ -42,8 +48,8 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     notify(supported ? {status:'stopped',message} : {status:'unsupported',supported:false,message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザか、手動操作を使ってください。'});
   }
 
-  function start(continuing = false) {
-    if (disposed || active) return;
+  function start() {
+    if (disposed || mode) return;
     if (!supported) {
       notify({status: 'unsupported', message: 'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザで開くか、文字入力を使ってください。'});
       return;
@@ -52,11 +58,35 @@ export function createSpeechInput({ getState, onDecision, onStatus,
       notify({status: 'error', message: '発表を開始してから音声を開始してください。'});
       return;
     }
+    mode = {sessionEpoch: getState().sessionEpoch, retries: 0};
+    startRun(mode);
+  }
+
+  function startRun(owner, continuing = false) {
+    if (disposed || mode !== owner || active) return;
+    const state = getState();
+    if (state.phase !== 'presenting' || state.sessionEpoch !== owner.sessionEpoch) {
+      stop('発表が終了または再準備されたため、音声を停止しました。');
+      return;
+    }
+    const fail = message => { stop(message); notify({status: 'error', message}); };
+    const retry = message => {
+      if (disposed || mode !== owner || restartTimer !== null) return;
+      // Empty recognition runs can end immediately in some browsers. Back off
+      // rather than recursively constructing recognizers, and let stop cancel it.
+      const delay = Math.min(RETRY_WAIT_MS * 2 ** Math.min(owner.retries++, 3), MAX_RETRY_WAIT_MS);
+      restartTimer = setTimeout(() => {
+        if (disposed || mode !== owner) return;
+        restartTimer = null;
+        startRun(owner, true);
+      }, delay);
+      notify({status: 'listening', message});
+    };
     let recognition;
     try { recognition = new Recognition(); }
-    catch { notify({status: 'error', message: '音声認識を準備できませんでした。対応ブラウザか文字入力を使ってください。'}); return; }
+    catch { fail('音声認識を準備できませんでした。対応ブラウザか文字入力を使ってください。'); return; }
     active = recognition;
-    const current = () => !disposed && active === recognition;
+    const current = () => !disposed && mode === owner && active === recognition;
     let waitTimer = null;
     let waitGeneration = 0;
     let deadline = Infinity;
@@ -67,10 +97,17 @@ export function createSpeechInput({ getState, onDecision, onStatus,
       waitGeneration++;
     };
     cancelWait = cancelRunWait;
+    const discard = () => {
+      cancelRunWait();
+      captured = null;
+      // Invalidate first: abort may synchronously emit end or deliver it later.
+      active = null;
+      try { recognition.abort(); } catch { /* Already ended. */ }
+    };
     const expire = () => {
       if (!current()) return;
-      stop(WAIT_TIMEOUT_MESSAGE);
-      notify({status: 'error', message: WAIT_TIMEOUT_MESSAGE});
+      discard();
+      retry(WAIT_TIMEOUT_MESSAGE);
     };
     const armWait = () => {
       if (waitArmed) return;
@@ -117,6 +154,8 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         const rawTranscript = typeof result?.[0]?.transcript === 'string' ? result[0].transcript : '';
         const transcript = rawTranscript.slice(0, 180);
         if (!result?.isFinal) {
+          // Some browsers emit results without speechstart. Bound that pending
+          // utterance too, but never extend its lifetime with more interim text.
           if (captured && rawTranscript.trim()) armWait();
           notify({status: 'listening', transcript, message: '聞き取り中です。確定するまで操作しません。'});
           continue;
@@ -133,6 +172,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         }
         cancelRunWait();
         if (now() >= deadline) { expire(); return; }
+        owner.retries = 0;
         restartOnEnd = true;
         const intent = parseSpeechCommand(rawTranscript, { stepCount: getState().stepCount ?? 3 });
         const state = getState();
@@ -153,31 +193,35 @@ export function createSpeechInput({ getState, onDecision, onStatus,
       if (!current()) return;
       cancelRunWait();
       if (now() >= deadline) { expire(); return; }
+      owner.retries = 0;
       captured = null; restartOnEnd = true;
       notify({status: 'listening', message: '聞き取れませんでした。短い操作語でもう一度話してください。'});
     };
     recognition.onerror = event => {
       if (!current()) return;
-      cancelRunWait();
-      active = null;
-      try { recognition.abort(); } catch { /* Already ended. */ }
-      notify({status: 'error', message: ERRORS[event.error] ?? '音声認識が終了しました。通信とマイクを確認して開始し直してください。'});
+      if (event.error === 'no-speech') {
+        discard();
+        retry('声を待っています。操作するときに「次へ」などと話してください。');
+        return;
+      }
+      fail(ERRORS[event.error] ?? '音声認識が終了しました。通信とマイクを確認して開始し直してください。');
     };
     recognition.onend = () => {
       if (!current()) return;
       cancelRunWait();
       active = null;
       const state = getState();
-      if (restartOnEnd && state.phase === 'presenting' && state.sessionEpoch === sessionEpoch) {
-        start(true);
+      if (state.phase === 'presenting' && state.sessionEpoch === sessionEpoch) {
+        if (restartOnEnd) startRun(owner, true);
+        else retry('声を待っています。操作するときに「次へ」などと話してください。');
         return;
       }
-      notify({status: 'stopped', message: 'ブラウザの音声認識が終了しました。続けるときは音声を開始し直してください。'});
+      stop('発表が終了または再準備されたため、音声を停止しました。');
     };
     notify({status: 'starting', ...(continuing ? {} : {transcript: ''}),
       message: continuing ? '次の操作を聞き取る準備をしています。' : 'マイクの許可を確認しています。'});
     try { recognition.start(); }
-    catch { if (current()) { cancelRunWait(); active = null; notify({status: 'error', message: '音声認識を開始できませんでした。マイクの許可と対応ブラウザを確認してください。'}); } }
+    catch { if (current()) fail('音声認識を開始できませんでした。マイクの許可と対応ブラウザを確認してください。'); }
   }
   return {supported, start, stop, dispose() { stop(); disposed = true; }};
 }

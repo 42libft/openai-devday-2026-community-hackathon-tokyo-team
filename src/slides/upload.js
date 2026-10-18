@@ -61,6 +61,7 @@ export function createSlidePresenter(container, onError) {
         const rendered = await deck.render(index);
         if (id !== generation) { rendered.dispose(); return; }
         current = rendered;
+        if (Number.isFinite(rendered.aspectRatio) && rendered.aspectRatio > 0) container.style?.setProperty('--slide-ratio', String(rendered.aspectRatio));
         container.replaceChildren(rendered.element);
       } catch {
         if (id !== generation) return;

@@ -34,7 +34,7 @@ async function loadPdf(bytes, name, signal) {
         canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
         canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', `${name} ${index + 1}ページ目`);
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-        return { element: canvas, dispose() { canvas.width = 0; canvas.height = 0; } };
+        return { element: canvas, aspectRatio: viewport.width / viewport.height, dispose() { canvas.width = 0; canvas.height = 0; } };
       },
       destroy() { destroyed = true; signal?.removeEventListener('abort', abort); void task.destroy(); },
     };
@@ -95,7 +95,7 @@ async function loadPptx(bytes, name, signal) {
         surface.style.position = 'absolute';
         surface.style.transformOrigin = 'top left';
         if (destroyed) { dispose(); throw new Error('Disposed'); }
-        return { element: host, dispose };
+        return { element: host, aspectRatio: presentation.width / presentation.height, dispose };
       } catch (error) { dispose(); throw error; }
     },
     destroy() { destroyed = true; for (const dispose of [...viewers]) dispose(); },
