@@ -1,4 +1,6 @@
-import test from 'node:test';
+import test, {afterEach} from 'node:test';
+const openVoices=[];
+afterEach(()=>{for(const voice of openVoices.splice(0))voice.dispose();});
 import assert from 'node:assert/strict';
 import {createSpeechInput, parseSpeechCommand} from '../src/input/speech.js';
 import {createPresentationState, transitionPresentation} from '../src/state/presentation.js';
@@ -24,7 +26,8 @@ function harness({unsupported = false} = {}) {
   }
   const voice = createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
-  return {voice,instances,statuses,decisions,get state(){return state;},advance:()=>at+=2000,
+  openVoices.push(voice);
+  return {voice,instances,statuses,decisions,get state(){return state;},advance:(ms=2000)=>at+=ms,
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
@@ -113,4 +116,45 @@ test('voice source cannot start, restart, select or search', () => {
   for (const type of ['START','RESTART','SELECT','SEARCH']) {
     const state=h.state;assert.equal(transitionPresentation(state,{...createManualEvent(type,state),source:'voice'}),state);
   }
+});
+
+
+test('speech final before 6000ms applies, at or after the deadline it stops without applying', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  for(const delay of [5999,6000,6001]) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();r.say('次へ',0,false);
+    h.advance(delay);t.mock.timers.tick(delay);
+    if(delay<6000){r.say('次へ');assert.equal(h.state.step,1);}
+    else {assert.equal(h.statuses.at(-1).status,'error');assert.match(h.statuses.at(-1).message,/6秒/);r.say('次へ');assert.equal(h.state.step,0);assert.equal(r.aborted,1);}
+    h.voice.stop();
+  }
+});
+
+test('late final and old timer cannot affect explicitly restarted recognition', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const old=h.instances[0];old.onspeechstart();
+  h.advance(6000);t.mock.timers.tick(6000);h.voice.start();const fresh=h.instances[1];fresh.onspeechstart();
+  old.say('次へ');assert.equal(h.state.step,0);
+  h.advance(1000);t.mock.timers.tick(1000);fresh.say('次へ');assert.equal(h.state.step,1);
+  const count=h.statuses.length;h.advance(10000);t.mock.timers.tick(10000);assert.equal(h.statuses.length,count);
+});
+
+test('elapsed deadline rejects a final even if the browser delays the timeout callback', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+  h.advance(6000);r.say('次へ');
+  assert.equal(h.state.step,0);assert.equal(h.decisions.length,0);
+  assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');
+});
+
+test('stop, end, error and dispose cancel the wait timer; the next session owns its deadline', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  for(const end of ['stop','end','error','dispose']) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(end==='stop')h.voice.stop();else if(end==='end')r.onend();else if(end==='error')r.onerror({error:'network'});else h.voice.dispose();
+    const count=h.statuses.length;t.mock.timers.tick(6001);assert.equal(h.statuses.length,count);
+  }
+  const h=harness();h.voice.start();h.instances[0].onspeechstart();h.advance(2000);t.mock.timers.tick(2000);
+  h.voice.stop();h.voice.start();h.instances[1].onspeechstart();h.advance(4001);t.mock.timers.tick(4001);
+  assert.equal(h.statuses.at(-1).status,'listening');h.instances[1].say('次へ');assert.equal(h.state.step,1);
 });

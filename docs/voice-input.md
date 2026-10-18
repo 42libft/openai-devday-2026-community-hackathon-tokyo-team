@@ -26,6 +26,8 @@
 
 ブラウザ対応・ネットワーク要件は [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition)、停止の意味は [abort()](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/abort) を参照。
 
+認識開始と各発話開始を起算点に、確定待ちの上限を6秒とする。期限に達した場合は音声を停止し、再開始を案内する。期限後の確定結果や、停止・再開始前の認識器からの結果は操作しない。成功・停止・終了・エラー・破棄時は待機タイマーを解放する。
+
 ## 検証
 
 2026-10-18、`npm test` の全74件に、音声の正規化・途中結果・重複・古い版・停止後応答・拒否／ネットワーク失敗・非対応・寄り道復帰を含め成功。
