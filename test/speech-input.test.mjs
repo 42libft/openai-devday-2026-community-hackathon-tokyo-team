@@ -165,3 +165,12 @@ test('voice source cannot start, restart, select or search', () => {
     const state=h.state;assert.equal(transitionPresentation(state,{...createManualEvent(type,state),source:'voice'}),state);
   }
 });
+
+test('nomatch finishes an utterance without blocking the next valid speech onset', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];
+  r.onspeechstart();r.onnomatch();
+  r.say('次へ');assert.equal(h.decisions.length,0,'a completed utterance cannot accept a late final');
+  assert.equal(r.aborted,0);
+  r.onspeechstart();r.say('次へ',1);
+  assert.equal(r.aborted,0);assert.equal(h.state.step,1);assert.equal(h.decisions.length,1);
+});

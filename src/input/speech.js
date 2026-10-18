@@ -111,7 +111,11 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         if (current()) notify({status: 'listening', transcript, message: applied === false ? '今の画面ではこの操作を実行できません。画面の案内を確認してください。' : '音声の操作を受け付けました。取り消しもできます。'});
       }
     };
-    recognition.onnomatch = () => { if (current()) notify({status: 'listening', message: '聞き取れませんでした。短い操作語でもう一度話してください。'}); };
+    recognition.onnomatch = () => {
+      if (!current()) return;
+      captured = null;
+      notify({status: 'listening', message: '聞き取れませんでした。短い操作語でもう一度話してください。'});
+    };
     recognition.onerror = event => {
       if (!current()) return;
       active = null;
