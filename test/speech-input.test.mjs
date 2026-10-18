@@ -237,6 +237,13 @@ test('automatic continuation owns a fresh timeout and old callbacks cannot end i
 });
 
 
+test('stopping unsupported speech preserves capability and recovery guidance', () => {
+  const h=harness({unsupported:true});h.voice.stop('カメラへ切り替え');
+  assert.equal(h.statuses.at(-1).status,'unsupported');assert.equal(h.statuses.at(-1).supported,false);
+  assert.match(h.statuses.at(-1).message,/対応していません/);
+  h.voice.start();h.voice.stop();assert.equal(h.statuses.at(-1).status,'unsupported');
+});
+
 test('nomatch closes the old frame and the next recognizer accepts a valid command', () => {
   const h=harness();h.voice.start();const old=h.instances[0];old.onnomatch();
   old.say('次へ',0,true,false);assert.equal(h.decisions.length,0);

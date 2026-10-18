@@ -306,3 +306,71 @@ button, h1, h2, h3, p, span { overflow-wrap: anywhere; }
   .input-strip p { flex-basis:100%; }
   .input-strip button { flex:1 1 auto; }
 }
+
+/* The deck preview is the main workspace; preparation stays in document order. */
+.workspace-grid { grid-template-columns: minmax(0, 1fr); }
+.presentation-column { width: 100%; }
+#script-editor-slot { margin-bottom: 16px; }
+.start-panel { padding: 18px 0; }
+.presentation-dock { min-width: 0; }
+.presentation-dock .control-panel { padding-top: 12px; }
+.presentation-dock .status-row { margin-top: 8px; }
+.presentation-dock .status-row > p { min-width: 0; flex: 1; }
+[data-phase]:not([data-phase="presenting"]) .presentation-dock .progress-controls,
+[data-phase]:not([data-phase="presenting"]) .presentation-dock [data-event="STOP"] { display: none; }
+
+/* Reserve the measured dock height so the final page and focused controls can
+   scroll fully above it. A bounded inner scroll also works on short screens. */
+html:has(#app[data-phase="presenting"]) { scroll-padding-bottom: calc(var(--presentation-dock-height, 160px) + 20px); }
+#app[data-phase="presenting"] { padding-bottom: calc(var(--presentation-dock-height, 160px) + 24px); }
+[data-phase="presenting"] .presentation-dock {
+  position: fixed;
+  z-index: 20;
+  inset: auto 0 0;
+  width: 100%;
+  max-height: 58dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding: 12px;
+  padding: 12px max(20px, calc((100vw - 1264px) / 2)) calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid #cbd3dc;
+  background: #fdfefef5;
+  box-shadow: 0 -5px 22px #18283d14;
+}
+[data-phase="presenting"] .presentation-dock .control-panel { padding: 0; }
+[data-phase="presenting"] .presentation-dock .progress-controls { gap: 12px; }
+[data-phase="presenting"] .presentation-dock .progress-controls button { flex: 0 1 150px; min-width: 0; }
+[data-phase="presenting"] .presentation-dock .undo-button { margin-left: 8px; }
+[data-phase="presenting"] .presentation-dock .status-row { min-height: 44px; padding: 6px 0 0; margin-top: 6px; border-top: 1px solid var(--line); gap: 24px; }
+[data-phase="presenting"] .presentation-dock .button-stop { margin-left: auto; border-color: #dccdc6; background: #fff; }
+[data-phase="presenting"] .presentation-dock .jump-panel,
+[data-phase="presenting"] .presentation-dock .resume-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; margin: 0 0 10px; padding: 10px 14px; }
+[data-phase="presenting"] .presentation-dock .jump-panel > div:first-child,
+[data-phase="presenting"] .presentation-dock .resume-panel > div { min-width: 0; }
+[data-phase="presenting"] .presentation-dock .panel-actions { flex: 0 0 auto; margin: 0; gap: 8px; }
+[data-phase="presenting"] .presentation-dock .jump-panel h3 { margin-top: 2px; font-size: .85rem; }
+[data-phase="presenting"] .presentation-dock .jump-panel p:not(.panel-eyebrow) { margin-top: 2px; }
+[data-phase="presenting"] .presentation-dock .button-resume { white-space: nowrap; }
+[data-phase="presenting"] .presentation-dock button:focus-visible { outline-offset: 2px; }
+
+@media (max-width: 600px) {
+  [data-phase="presenting"] .presentation-dock { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  [data-phase="presenting"] .presentation-dock .progress-controls { display: grid; grid-template-columns: 1fr 1fr 1.15fr; gap: 8px; }
+  [data-phase="presenting"] .presentation-dock .progress-controls button { width: 100%; padding: 9px 6px; font-size: .8rem; }
+  [data-phase="presenting"] .presentation-dock .undo-button { margin-left: 0; }
+  [data-phase="presenting"] .presentation-dock .status-row { gap: 14px; }
+  [data-phase="presenting"] .presentation-dock #demo-status { font-size: .68rem; line-height: 1.55; }
+  [data-phase="presenting"] .presentation-dock .button-stop { padding: 8px 10px; font-size: .72rem; }
+  [data-phase="presenting"] .presentation-dock .jump-panel,
+  [data-phase="presenting"] .presentation-dock .resume-panel { flex-wrap: wrap; align-items: stretch; padding: 9px 10px; gap: 8px; }
+  [data-phase="presenting"] .presentation-dock .jump-panel > div:first-child,
+  [data-phase="presenting"] .presentation-dock .resume-panel > div { flex: 1 1 100%; }
+  [data-phase="presenting"] .presentation-dock .panel-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  [data-phase="presenting"] .presentation-dock .panel-actions button { padding: 8px; font-size: .78rem; }
+  [data-phase="presenting"] .presentation-dock .resume-panel .button-resume { width: 100%; }
+}
+@media (max-height: 500px) {
+  [data-phase="presenting"] .presentation-dock { max-height: 62dvh; }
+  [data-phase="presenting"] .presentation-dock .jump-panel p:not(.panel-eyebrow) { display: none; }
+  [data-phase="presenting"] .slide-stage { min-height: 180px; }
+}

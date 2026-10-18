@@ -14,12 +14,14 @@ import { createUploadSession, createSlidePresenter } from './slides/upload.js';
 import { loadSlideDeck } from './slides/deck.js';
 import { mountDeckUpload } from './ui/deck-upload.js';
 import './slides.css';
+import './input-status.css';
 
 const root = document.getElementById('app');
 let controller;
 let camera;
 let speech;
 let inputMode = null;
+let inputSettings;
 let cameraPanel;
 let speechPanel;
 let scriptEditor;
@@ -40,6 +42,8 @@ const view = mountPresentation(root, dispatchIntent, {
     void slidePresenter.show(deck, index);
   },
 });
+
+function setInputMode(mode) { inputMode = mode; inputSettings?.setMode(mode); }
 
 function dispatchIntent(type, payload = {}) {
   if (type === 'RENDER_RETRY') {
@@ -65,7 +69,7 @@ function dispatchIntent(type, payload = {}) {
   const next = controller.dispatch(createManualEvent(type, previous, payload));
   if (next !== previous && (type === 'STOP' || type === 'RESTART')) {
     if (upload?.busy) upload.cancel();
-    inputMode = null; camera?.stop(); speech?.stop();
+    setInputMode(null); camera?.stop(); speech?.stop();
   }
   if (next === previous) {
     const reason = previous.phase === 'idle'
@@ -79,7 +83,8 @@ function dispatchIntent(type, payload = {}) {
                 : type === 'SEARCH' ? '検索語は120文字以内で入力してください。'
                   : '今の状態ではこの操作は使えません。表示中のボタンを確認してください。';
     view.announce(reason);
-  }
+    inputSettings?.setResult('manual', reason);
+  } else inputSettings?.setResult('manual', next.message);
 }
 
 controller = createController({
@@ -89,6 +94,7 @@ controller = createController({
     view.render(state);
     cameraPanel?.setState({phase: state.phase});
     speechPanel?.setState({phase: state.phase});
+    inputSettings?.setState({phase: state.phase});
     scriptEditor?.setState({disabled: state.phase !== 'idle'});
     uploadPanel?.setState({phase: state.phase, hasDeck: Boolean(uploadedDeck)});
   },
@@ -147,30 +153,42 @@ scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
   },
 });
 
-const inputSettings = mountInputSettings(root, {
+function startCamera() {
+  if (upload.busy) { view.announce('スライドの読み込み完了後にカメラを開始してください。'); return; }
+  if (controller.getState().phase === 'idle') dispatchIntent('START');
+  if (controller.getState().phase !== 'presenting') {
+    const update={status:'error',message:'「はじめから」で発表を準備してから再開してください。'};
+    cameraPanel.setState(update);inputSettings.setStatus('camera',update);return;
+  }
+  setInputMode('camera');
+  speech.stop('カメラ操作へ切り替えたため音声を停止しました。声を使うときは音声の開始ボタンを押してください。');
+  inputSettings.showPresentation();camera.start();
+}
+function startSpeech() {
+  if (upload.busy) { view.announce('スライドの読み込み完了後に音声を開始してください。'); return; }
+  if (!speech.supported) { speech.start(); return; }
+  if (controller.getState().phase === 'idle') dispatchIntent('START');
+  if (controller.getState().phase !== 'presenting') {
+    const update={status:'stopped',message:'「はじめから」で発表を準備してから音声を開始してください。'};
+    speechPanel.setState(update);inputSettings.setStatus('speech',update);return;
+  }
+  setInputMode('voice');
+  camera.stop('音声操作へ切り替えたためカメラと画像送信を停止しました。手を使うときはカメラの開始ボタンを押してください。');
+  inputSettings.showPresentation();speech.start();
+}
+inputSettings = mountInputSettings(root, {
+  onCameraStart:startCamera,onSpeechStart:startSpeech,
   onManual() {
-    inputMode = null;
-    camera?.stop(); speech?.stop();
-    view.announce('音声とカメラを停止しました。画面のボタンで発表を続けられます。');
+    setInputMode(null);camera?.stop();speech?.stop();
+    const message='音声とカメラを停止しました。画面のボタンで発表を続けられます。';
+    inputSettings.setResult('manual',message);view.announce(message);
   },
 });
+inputSettings.setState({phase:controller.getState().phase});
 const cameraContainer = inputSettings.cameraContainer;
 cameraPanel = mountCameraPanel(cameraContainer, {
-  onStart() {
-    if (upload.busy) { view.announce('スライドの読み込み完了後にカメラを開始してください。'); return; }
-    if (controller.getState().phase === 'idle') dispatchIntent('START');
-    if (controller.getState().phase !== 'presenting') {
-      cameraPanel.setState({status: 'error', message: '「はじめから」で発表を準備してから再開してください。'});
-      return;
-    }
-    inputSettings.showPresentation();
-    inputMode = 'camera';
-    speech.stop('カメラ操作へ切り替えたため音声を停止しました。声を使うときは音声の開始ボタンを押してください。');
-    camera.start();
-  },
-  onStop: () => camera.stop(),
-  onCapture: () => camera.capture(),
-  onUndo: () => dispatchIntent('UNDO'),
+  onStart:startCamera,
+  onStop:()=>camera.stop(),onCapture:()=>camera.capture(),onUndo:()=>dispatchIntent('UNDO'),
 });
 camera = createCameraInput({
   video: cameraPanel.video,
@@ -180,28 +198,15 @@ camera = createCameraInput({
     if (inputMode !== 'camera') return false;
     const previous = controller.getState();
     const next = controller.dispatch(event);
-    view.announce(next === previous
+    const message=next === previous
       ? '今の画面では移動できません。最初・最後の工程、または寄り道の確認状態をご確認ください。'
-      : `AIカメラの判定で${event.type === 'NEXT' ? '次の' : '前の'}工程へ移りました。取り消しもできます。`);
+      : `AIカメラの判定で${event.type === 'NEXT' ? '次の' : '前の'}工程へ移りました。取り消しもできます。`;
+    inputSettings.setResult('camera',message);view.announce(message);
+    return next !== previous;
   },
 });
 const speechContainer = inputSettings.speechContainer;
-speechPanel = mountSpeechPanel(speechContainer, {
-  onStart() {
-    if (upload.busy) { view.announce('スライドの読み込み完了後に音声を開始してください。'); return; }
-    if (!speech.supported) { speech.start(); return; }
-    if (controller.getState().phase === 'idle') dispatchIntent('START');
-    if (controller.getState().phase !== 'presenting') {
-      speechPanel.setState({status: 'stopped', message: '「はじめから」で発表を準備してから音声を開始してください。'});
-      return;
-    }
-    inputSettings.showPresentation();
-    inputMode = 'voice';
-    camera.stop('音声操作へ切り替えたためカメラと画像送信を停止しました。手を使うときはカメラの開始ボタンを押してください。');
-    speech.start();
-  },
-  onStop: () => speech.stop(),
-});
+speechPanel = mountSpeechPanel(speechContainer, {onStart:startSpeech,onStop:()=>speech.stop()});
 speech = createSpeechInput({
   getState: controller.getState,
   onStatus(update) { speechPanel.setState(update); inputSettings.setStatus('speech', update); },
@@ -209,18 +214,20 @@ speech = createSpeechInput({
     if (inputMode !== 'voice') return false;
     const previous = controller.getState();
     const next = controller.dispatch(event);
-    if (next !== previous && event.type === 'STOP') { inputMode = null; camera.stop(); speech.stop(); }
-    view.announce(next === previous ? '今の画面ではこの音声操作は使えません。工程や寄り道の状態を確認してください。' : next.message);
+    if (next !== previous && event.type === 'STOP') { setInputMode(null); camera.stop(); speech.stop(); }
+    const message=next === previous ? '今の画面ではこの音声操作は使えません。工程や寄り道の状態を確認してください。' : next.message;
+    inputSettings.setResult('voice',message);view.announce(message);
     return next !== previous;
   },
 });
 if (!speech.supported) {
-  inputSettings.setStatus('speech', {status:'unsupported'});
+  inputSettings.setStatus('speech', {status:'unsupported',supported:false,message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザか、手動操作を使ってください。'});
   speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'});
 }
 bindInputLifecycle({ window, document, inputs: [camera, speech] });
 
 document.addEventListener('keydown', (event) => {
+  if (event.target?.closest?.('dialog[open]')) return;
   const intent = commandForKey(event);
   if (!intent) return;
   event.preventDefault();
