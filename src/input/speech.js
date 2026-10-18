@@ -60,6 +60,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     let waitTimer = null;
     let waitGeneration = 0;
     let deadline = Infinity;
+    let waitArmed = false;
     const cancelRunWait = () => {
       clearTimeout(waitTimer);
       waitTimer = null;
@@ -72,6 +73,8 @@ export function createSpeechInput({ getState, onDecision, onStatus,
       notify({status: 'error', message: WAIT_TIMEOUT_MESSAGE});
     };
     const armWait = () => {
+      if (waitArmed) return;
+      waitArmed = true;
       cancelRunWait();
       deadline = now() + FINAL_WAIT_MS;
       const generation = waitGeneration;
@@ -92,7 +95,6 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     recognition.maxAlternatives = 1;
     recognition.onstart = () => {
       if (!current()) return;
-      armWait();
       notify({status: 'listening', message: '聞き取り中です。「次へ」「前へ」など、操作する言葉だけを話してください。'});
     };
     recognition.onspeechstart = () => {
@@ -114,7 +116,11 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         const result = event.results[index];
         const rawTranscript = typeof result?.[0]?.transcript === 'string' ? result[0].transcript : '';
         const transcript = rawTranscript.slice(0, 180);
-        if (!result?.isFinal) { notify({status: 'listening', transcript, message: '聞き取り中です。確定するまで操作しません。'}); continue; }
+        if (!result?.isFinal) {
+          if (captured && rawTranscript.trim()) armWait();
+          notify({status: 'listening', transcript, message: '聞き取り中です。確定するまで操作しません。'});
+          continue;
+        }
         if (seen.has(index)) continue;
         seen.add(index);
         // A single-shot run consumes at most one final, including rejections.
