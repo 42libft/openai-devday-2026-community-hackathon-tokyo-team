@@ -1,5 +1,5 @@
 import { createController } from './controller.js';
-import { createPresentationState, transitionPresentation } from './state/presentation.js';
+import { STEPS, createPresentationState, transitionPresentation } from './state/presentation.js';
 import { createManualEvent, parseCommand, commandForKey } from './input/manual.js';
 import { mountPresentation } from './ui/view.js';
 import { createCameraInput } from './input/camera.js';
@@ -7,12 +7,22 @@ import { mountCameraPanel } from './ui/camera-panel.js';
 import { createSpeechInput } from './input/speech.js';
 import { mountSpeechPanel } from './ui/speech-panel.js';
 import { bindInputLifecycle } from './input/lifecycle.js';
+import { createScriptStore } from './script/storage.js';
+import { mountScriptEditor } from './ui/script-editor.js';
 
 const root = document.getElementById('app');
 let controller;
 let camera;
 let speech;
-const view = mountPresentation(root, dispatchIntent);
+let scriptEditor;
+const scriptStore = createScriptStore(STEPS);
+const savedScript = scriptStore.load();
+let activeSteps = savedScript.steps;
+let scriptSource = savedScript.source;
+const view = mountPresentation(root, dispatchIntent, {
+  getSteps: () => activeSteps,
+  hasCustomScript: () => scriptSource !== 'sample',
+});
 
 function dispatchIntent(type, payload = {}) {
   if (type === 'COMMAND') {
@@ -46,7 +56,30 @@ function dispatchIntent(type, payload = {}) {
 controller = createController({
   initialState: createPresentationState(),
   transition: transitionPresentation,
-  render: view.render,
+  render(state) {
+    view.render(state);
+    scriptEditor?.setState({disabled: state.phase !== 'idle'});
+  },
+});
+
+scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
+  steps: activeSteps,
+  message: savedScript.message,
+  onSave(steps) {
+    if (controller.getState().phase !== 'idle') {
+      scriptEditor.setState({message: '発表を停止し、「はじめから」で準備に戻ってから編集してください。'});
+      return;
+    }
+    try {
+      const saved = scriptStore.save(steps);
+      activeSteps = saved.steps;
+      scriptSource = saved.source;
+      view.render(controller.getState());
+      scriptEditor.setState({steps: activeSteps, message: saved.message});
+    } catch (error) {
+      scriptEditor.setState({message: error.message || '台本を保存できませんでした。入力内容を確認してください。'});
+    }
+  },
 });
 
 const cameraContainer = document.createElement('section');

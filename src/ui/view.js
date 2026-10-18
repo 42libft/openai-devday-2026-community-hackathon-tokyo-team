@@ -14,7 +14,7 @@ function textElement(tag, className, text) {
 }
 
 /** Stable, manual-only presentation UI. State changes belong to the controller. */
-export function mountPresentation(root, onIntent) {
+export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasCustomScript = () => false } = {}) {
   root.innerHTML = `
     <div class="workspace-topline">
       <p id="workspace-context"></p>
@@ -30,9 +30,10 @@ export function mountPresentation(root, onIntent) {
             <h2 id="slide-title"></h2>
             <p id="slide-script"></p>
           </div>
-          <div class="slide-footer"><span>固定台本</span><span id="stage-footer-note"></span></div>
+          <div class="slide-footer"><span id="script-source">サンプル台本</span><span id="stage-footer-note"></span></div>
           <div class="slide-progress" aria-hidden="true"><span></span></div>
         </section>
+        <div id="script-editor-slot" aria-label="台本の編集"></div>
         <div class="start-panel" id="start-panel">
           <p>全3ステップ。ボタンで進行し、直前の操作を取り消せます。</p>
           <button type="button" class="button-primary start-button" data-event="START">台本を確認して開始 <span aria-hidden="true">→</span></button>
@@ -101,8 +102,9 @@ export function mountPresentation(root, onIntent) {
     availability: get('#search-availability'), selected: get('.selected-panel'),
     selectedTitle: get('#selected-title'), selectedSummary: get('#selected-summary'),
     commandForm: get('#command-form'), command: get('#command-text'), commandSubmit: get('#command-submit'), commandHint: get('#command-hint'),
+    scriptSource: get('#script-source'), scriptEditor: get('#script-editor-slot'),
   };
-  const stepButtons = STEPS.map((step, index) => {
+  const stepButtons = getSteps().map((step, index) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'step-button';
@@ -161,9 +163,10 @@ export function mountPresentation(root, onIntent) {
   return {
     render(state) {
       if (destroyed) return;
+      const steps = getSteps();
       const phase = PHASE_COPY[state.phase] ?? PHASE_COPY.idle;
-      const stepIndex = Math.max(0, Math.min(STEPS.length - 1, state.step));
-      const step = STEPS[stepIndex];
+      const stepIndex = Math.max(0, Math.min(steps.length - 1, state.step));
+      const step = steps[stepIndex];
       const presenting = state.phase === 'presenting';
       const pending = Boolean(state.pendingJump);
       const canOperate = presenting && !pending;
@@ -174,27 +177,29 @@ export function mountPresentation(root, onIntent) {
       elements.context.textContent = phase.context;
       elements.phase.textContent = phase.label;
       elements.stageLabel.textContent = phase.stage;
-      elements.count.textContent = `${stepIndex + 1} / ${STEPS.length}`;
+      elements.count.textContent = `${stepIndex + 1} / ${steps.length}`;
       elements.number.textContent = String(stepIndex + 1).padStart(2, '0');
       elements.title.textContent = step.title;
       elements.script.textContent = step.script;
+      elements.scriptSource.textContent = hasCustomScript() ? '自分の台本' : 'サンプル台本';
+      elements.scriptEditor.hidden = state.phase !== 'idle';
       elements.stageNote.textContent = state.phase === 'stopped' ? '進行は停止しています' : resume ? '寄り道中・続きへ戻れます' : '自分のペースで進める';
-      elements.progress.style.width = `${((stepIndex + 1) / STEPS.length) * 100}%`;
+      elements.progress.style.width = `${((stepIndex + 1) / steps.length) * 100}%`;
       elements.start.hidden = state.phase !== 'idle';
       elements.jump.hidden = !pending || !presenting;
       elements.resume.hidden = !resume || !presenting;
       elements.stopped.hidden = state.phase !== 'stopped';
       if (pending) {
-        const target = STEPS[state.pendingJump.targetStep];
+        const target = steps[state.pendingJump.targetStep];
         elements.jumpTitle.textContent = `${state.pendingJump.targetStep + 1}枚目「${target?.title ?? ''}」へ移動しますか？`;
       }
       if (resume) {
-        const returnStep = STEPS[resume.step];
+        const returnStep = steps[resume.step];
         elements.resumeDescription.textContent = `${resume.step + 1}枚目「${returnStep?.title ?? ''}」の続きへ戻れます。`;
       }
       const allowed = {
         START: state.phase === 'idle',
-        NEXT: canOperate && stepIndex < STEPS.length - 1,
+        NEXT: canOperate && stepIndex < steps.length - 1,
         PREVIOUS: canOperate && stepIndex > 0,
         UNDO: canOperate && Boolean(state.undoSnapshot),
         STOP: presenting,
@@ -206,6 +211,8 @@ export function mountPresentation(root, onIntent) {
       };
       for (const button of actionButtons) button.disabled = !allowed[button.dataset.event];
       stepButtons.forEach((button, index) => {
+        button.querySelector('.step-name').textContent = steps[index].title;
+        button.setAttribute('aria-label', `${index + 1}枚目「${steps[index].title}」へ寄り道`);
         const current = index === stepIndex;
         button.disabled = !allowed.REQUEST_JUMP || current;
         button.classList.toggle('is-current', current);
