@@ -19,7 +19,8 @@ function harness({unsupported = false} = {}) {
     constructor() {this.aborted=0;instances.push(this);}
     start() {this.started=true;this.onstart?.();}
     abort() {this.aborted++;this.onend?.();}
-    say(text,index=0,final=true) {const result=[{transcript:text,confidence:0.99}];result.isFinal=final;const results=Array(index+1).fill(null);results[index]=result;this.onresult?.({resultIndex:index,results});}
+    say(text,index=0,final=true) {this.batch([text],index,final);}
+    batch(texts,index=0,final=true) {const results=Array(index).fill(null);for(const text of texts){const result=[{transcript:text,confidence:0.99}];result.isFinal=final;results.push(result);}this.onresult?.({resultIndex:index,results});}
   }
   const voice = createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
@@ -30,6 +31,7 @@ function harness({unsupported = false} = {}) {
 test('microphone starts only explicitly; only final results act; duplicate result indices are ignored', () => {
   const h=harness(); assert.equal(h.instances.length,0); h.voice.start(); h.voice.start();
   assert.equal(h.instances.length,1); const r=h.instances[0]; assert.equal(r.lang,'ja-JP');
+  r.onspeechstart();
   r.say('次へ',0,false); assert.equal(h.state.step,0);
   r.say('次へ'); assert.equal(h.state.step,1); assert.equal(h.decisions[0].source,'voice');
   r.say('次へ'); assert.equal(h.state.step,1); assert.equal(h.decisions.length,1);
@@ -41,7 +43,7 @@ test('stop and dispose invalidate late results even after a new listening sessio
   const h=harness();h.voice.start();const old=h.instances[0];
   h.voice.stop();assert.equal(old.aborted,1);old.say('次へ');assert.equal(h.state.step,0);
   h.voice.start();old.say('次へ',1);assert.equal(h.state.step,0);
-  h.instances[1].say('次へ');assert.equal(h.state.step,1);
+  h.instances[1].onspeechstart();h.instances[1].say('次へ');assert.equal(h.state.step,1);
   h.voice.dispose();h.instances[1].say('前へ',1);h.voice.start();assert.equal(h.instances.length,2);assert.equal(h.state.step,1);
 });
 
@@ -51,11 +53,42 @@ test('a state change during speech invalidates the captured command', () => {
   r.onspeechstart();r.say('前へ',1);assert.equal(h.state.step,0);
 });
 
+test('a stale batch stays rejected until a new speechstart, including its later result events', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();h.manual('NEXT');
+  r.batch(['次へ','次へ']);assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  h.advance();r.say('前へ',2);assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  r.onspeechstart();r.batch(['次へ','次へ']);assert.equal(h.decisions.length,0);
+  r.say('前へ',3);assert.equal(h.state.step,0);assert.equal(h.decisions.length,1);
+});
+
+test('one utterance cannot both propose and confirm a detour, even across result events', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+  r.batch(['3枚目へ','確認']);assert.equal(h.state.step,0);assert.equal(h.state.pendingJump.targetStep,2);
+  assert.deepEqual(h.decisions.map(e=>e.type),['REQUEST_JUMP']);
+  h.advance();r.say('確認',2);assert.equal(h.state.step,0);assert.equal(h.decisions.length,1);
+  r.onspeechstart();r.say('確認',3);assert.equal(h.state.step,2);assert.equal(h.state.pendingJump,null);
+  assert.deepEqual(h.decisions.map(e=>e.type),['REQUEST_JUMP','CONFIRM_JUMP']);
+});
+
+test('only a new speechstart arms an operation after missing onset or a rejected final', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];
+  r.say('次へ');assert.equal(h.decisions.length,0);
+  r.onspeechstart();r.batch(['次へと言います','次へ'],1);assert.equal(h.decisions.length,0);
+  r.onspeechstart();r.say('前へ',3);assert.equal(h.decisions.length,1);assert.equal(h.state.step,0);
+  r.say('次へ',4);assert.equal(h.decisions.length,1);assert.equal(h.state.step,0);
+  r.onspeechstart();r.say('次へ',5);assert.equal(h.state.step,1);
+  r.onspeechstart();r.say('前へ',6);assert.equal(h.state.step,0);
+  h.advance();r.onspeechstart();r.say('次へ',7);assert.equal(h.state.step,1);
+  r.onspeechstart();r.say('次へ',8);assert.equal(h.state.step,1);assert.equal(h.decisions.length,4);
+  h.advance();r.say('次へ',9);assert.equal(h.state.step,1);assert.equal(h.decisions.length,4);
+  r.onspeechstart();r.say('次へ',10);assert.equal(h.state.step,2);assert.equal(h.decisions.length,5);
+});
+
 test('permission/network errors stop recognition without automatic restarts and explicit restart works', () => {
   for(const error of ['not-allowed','network','audio-capture','no-speech']) {
     const h=harness();h.voice.start();const r=h.instances[0];r.onerror({error});
     assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');r.say('次へ');assert.equal(h.state.step,0);
-    h.voice.start();assert.equal(h.instances.length,2);h.instances[1].say('次へ');assert.equal(h.state.step,1);
+    h.voice.start();assert.equal(h.instances.length,2);h.instances[1].onspeechstart();h.instances[1].say('次へ');assert.equal(h.state.step,1);
   }
 });
 
@@ -68,7 +101,7 @@ test('unsupported recognition, browser end and construction failures have clear 
 
 test('voice detour confirmation and resume restore the prior search and selection', () => {
   const h=harness();h.manual('NEXT');h.manual('SEARCH',{query:'チーム'});h.manual('SELECT',{selectedId:'team-board'});
-  h.voice.start();const r=h.instances[0];r.say('3枚目へ');assert.equal(h.state.pendingJump.targetStep,2);
+  h.voice.start();const r=h.instances[0];r.onspeechstart();r.say('3枚目へ');assert.equal(h.state.pendingJump.targetStep,2);
   h.advance();r.onspeechstart();r.say('次へ',1);assert.equal(h.state.step,1);assert.notEqual(h.state.pendingJump,null);
   h.advance();r.onspeechstart();r.say('確認',2);assert.equal(h.state.step,2);assert.equal(h.state.query,'');
   h.advance();r.onspeechstart();r.say('続きへ',3);assert.equal(h.state.step,1);assert.equal(h.state.query,'チーム');assert.equal(h.state.selectedId,'team-board');

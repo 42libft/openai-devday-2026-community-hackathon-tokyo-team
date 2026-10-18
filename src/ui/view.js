@@ -100,7 +100,7 @@ export function mountPresentation(root, onIntent) {
     searchSummary: get('#search-summary'), resultCount: get('#result-count'), empty: get('#empty-results'),
     availability: get('#search-availability'), selected: get('.selected-panel'),
     selectedTitle: get('#selected-title'), selectedSummary: get('#selected-summary'),
-    commandForm: get('#command-form'), command: get('#command-text'), commandSubmit: get('#command-submit'),
+    commandForm: get('#command-form'), command: get('#command-text'), commandSubmit: get('#command-submit'), commandHint: get('#command-hint'),
   };
   const stepButtons = STEPS.map((step, index) => {
     const button = document.createElement('button');
@@ -216,8 +216,12 @@ export function mountPresentation(root, onIntent) {
       });
       elements.search.disabled = !canOperate;
       elements.searchSubmit.disabled = !canOperate;
-      elements.command.disabled = !presenting;
-      elements.commandSubmit.disabled = !presenting;
+      elements.command.disabled = false;
+      elements.commandSubmit.disabled = false;
+      elements.command.placeholder = state.phase === 'idle' ? '例：準備する' : state.phase === 'stopped' ? '例：はじめから' : '例：次へ';
+      elements.commandHint.textContent = state.phase === 'idle' ? '「準備する」で発表を開始できます。'
+        : state.phase === 'stopped' ? '「はじめから」で再準備します。停止中は進行しません。'
+          : '次へ / 取り消し / 続きへ / 1枚目へ';
       const restored = state.sessionEpoch !== lastSessionEpoch || (hadResume && !resume) || (hadUndo && !state.undoSnapshot);
       if (state.query !== lastQuery || restored) {
         elements.search.value = state.query ?? '';

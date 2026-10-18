@@ -54,7 +54,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     const current = () => !disposed && active === recognition;
     const runId = makeId();
     const seen = new Set();
-    let captured = frame();
+    let captured = null;
     let last = {command: '', at: -Infinity};
     recognition.lang = 'ja-JP';
     recognition.continuous = true;
@@ -72,24 +72,29 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         if (!result?.isFinal) { notify({status: 'listening', transcript, message: '聞き取り中です。確定するまで操作しません。'}); continue; }
         if (seen.has(index)) continue;
         seen.add(index);
+        // A result event can contain several finals. Only speechstart arms one
+        // final result; accepting or rejecting it must not rebase later results.
+        const utterance = captured;
+        captured = null;
+        if (!utterance) {
+          notify({status: 'listening', transcript, message: '一度の発話で受け付ける操作は1つです。次の操作は改めて話してください。'});
+          continue;
+        }
         const intent = parseSpeechCommand(rawTranscript);
         const state = getState();
-        const stale = state.phase !== 'presenting' || state.sessionEpoch !== captured.sessionEpoch || state.revision !== captured.baseRevision;
+        const stale = state.phase !== 'presenting' || state.sessionEpoch !== utterance.sessionEpoch || state.revision !== utterance.baseRevision;
         if (!intent || stale) {
-          captured = frame();
           notify({status: 'listening', transcript, message: stale ? '聞き取り中に画面が変わりました。操作する言葉をもう一度話してください。' : '対応する操作語が見つかりません。「次へ」「取り消し」など、短く話してください。'});
           continue;
         }
         const command = JSON.stringify(intent);
         if (command === last.command && now() - last.at < 1200) {
-          captured = frame();
           notify({status: 'listening', transcript, message: '直前と同じ合図が続いたため、重複する操作を抑えました。'});
           continue;
         }
         last = {command, at: now()};
         notify({transcript});
-        const applied = onDecision({...intent, ...captured, source: 'voice', eventId: `${runId}:${index}`});
-        captured = frame();
+        const applied = onDecision({...intent, ...utterance, source: 'voice', eventId: `${runId}:${index}`});
         if (current()) notify({status: 'listening', transcript, message: applied === false ? '今の画面ではこの操作を実行できません。画面の案内を確認してください。' : '音声の操作を受け付けました。取り消しもできます。'});
       }
     };

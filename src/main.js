@@ -6,6 +6,7 @@ import { createCameraInput } from './input/camera.js';
 import { mountCameraPanel } from './ui/camera-panel.js';
 import { createSpeechInput } from './input/speech.js';
 import { mountSpeechPanel } from './ui/speech-panel.js';
+import { bindInputLifecycle } from './input/lifecycle.js';
 
 const root = document.getElementById('app');
 let controller;
@@ -14,7 +15,6 @@ let speech;
 const view = mountPresentation(root, dispatchIntent);
 
 function dispatchIntent(type, payload = {}) {
-  if (type === 'STOP' || type === 'RESTART') { camera?.stop(); speech?.stop(); }
   if (type === 'COMMAND') {
     const intent = parseCommand(payload.text);
     if (!intent) {
@@ -27,6 +27,7 @@ function dispatchIntent(type, payload = {}) {
   }
   const previous = controller.getState();
   const next = controller.dispatch(createManualEvent(type, previous, payload));
+  if (next !== previous && (type === 'STOP' || type === 'RESTART')) { camera?.stop(); speech?.stop(); }
   if (next === previous) {
     const reason = previous.phase === 'idle'
       ? 'まず台本を確認して開始してください。'
@@ -98,8 +99,7 @@ speech = createSpeechInput({
   },
 });
 if (!speech.supported) speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'});
-window.addEventListener('pagehide', () => { camera.dispose(); speech.dispose(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { camera.stop(); speech.stop(); } });
+bindInputLifecycle({ window, document, inputs: [camera, speech] });
 
 document.addEventListener('keydown', (event) => {
   const intent = commandForKey(event);
