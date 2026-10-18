@@ -13,6 +13,8 @@
 
 ## 初回と失敗からの復旧
 
+2026-10-18 15:23 JST、公開URL `https://devday-presentation-companion.vercel.app/api/decide` から実Decisions APIへ合成の白画像（320×240 PNG）を1回送り、HTTP 200、NONE、confidence 1、requestId・sessionEpoch・baseRevisionの一致を確認した。Vercel ProductionのSecret設定後に再デプロイ済み。これは本番の認証・画像入力・応答解析の疎通確認であり、実カメラのジェスチャー認識精度やNEXT／PREVIOUS操作の実測ではない。
+
 - 公開HTTPSのURLを直接開き「同意してカメラを開始」を押す。画像をOpenAIへ送る説明を確認してから許可する。発表も同時に開始する。
 - 片手の開いた掌で次へ、握り拳で前へ。次の合図の前に一度手を下ろす。手を保持しても連続移動しない。
 - カメラ拒否・機器なしは端末／ブラウザーの権限や接続を確認して再開する。API認証は運営側で設定を修正する。429は1分待ち、時間切れは通信を確認して再開する。
