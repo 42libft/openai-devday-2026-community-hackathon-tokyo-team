@@ -279,7 +279,6 @@ button, h1, h2, h3, p, span { overflow-wrap: anywhere; }
   .camera-result { gap: 7px 12px; }
 }
 
-
 /* Detailed sensor setup follows the presentation; the compact state stays visible. */
 .input-strip { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 0; border-bottom:1px solid var(--line); }
 .input-strip p { display:flex; flex:1 1 260px; flex-wrap:wrap; gap:6px 16px; font-size:.75rem; color:var(--muted); }

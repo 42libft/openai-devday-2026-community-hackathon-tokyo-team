@@ -126,19 +126,20 @@ npm run preview
 ビルド成果物は `dist/`、通常のプレビューは `http://127.0.0.1:4173` です。
 公開先の設定は [公開先ごとの設定](docs/static-output.md) にあります。
 
-## Decisionsを選んだ理由と比較
+## Decisions APIを選んだ理由
 
-発表中のカメラ画像から欲しい結果は、自由文の説明ではなく「次へ・前へ・操作なし」の3択です。
+カメラから受け取りたいのは「次へ・前へ・操作なし」の3択です。
 `api/decide.js` は [Decisions API](https://developers.openai.com/api/docs/guides/decisions) の画像入力とchoice質問を使い、`gpt-6-luna` にこの3択を渡します。
 confidenceと選択肢の確率がともに0.9以上の場合だけ操作候補を通し、曖昧な画像や不正出力では進みません。
 実呼出しは `POST https://api.openai.com/v1/decisions` です。
 
-さらに、保持した手を何度も同じ命令にしない仕組みと、状態の版による古い応答の拒否を組み合わせています。
-同じ確定済み判定列 `NEXT, NEXT, NONE, PREVIOUS, PREVIOUS` を本番の状態処理へ渡した比較では、即時実行の4回移動に対し、本方式は2回でした。
-手を下ろしたことに相当する確実なNONEを待つため、保持中の余分な中間移動を抑えます。
+## 連続操作を抑える仕組みの検証
+
+同じ手を出し続けたときに何度も進まないよう、操作後は手を下ろした判定（確実なNONE）が来るまで次の操作を待ちます。
+合成済みの5判定 `NEXT, NEXT, NONE, PREVIOUS, PREVIOUS` を本番の状態処理へ渡した再現テストでは、毎回実行する方式の4回に対し、本方式は2回だけ移動し、保持中の余分な移動を抑えました。
 
 再現は `node scripts/gesture-comparison.mjs`。根拠は [比較結果JSON](docs/gesture-comparison.json) と [検証手順](docs/gesture-evidence.md) にあります。
-これは合成の判定列による制御の比較です。実カメラの認識精度、実APIの速度、利用者の時間短縮を測った結果ではありません。
+この検証の対象は連続操作の抑止です。実画像での認識精度・API遅延・発表時間の短縮は未測定です。
 
 ## 適用範囲と制約
 

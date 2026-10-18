@@ -9,7 +9,7 @@ import { bindInputLifecycle } from '../src/input/lifecycle.js';
 import { createScriptStore } from '../src/script/storage.js';
 
 async function harness() {
-  let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput, manualInput;
+  let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput, inputSettingsActions;
   const cameraStates=[],speechStates=[];
   const input = () => ({
     running: false,
@@ -32,12 +32,12 @@ async function harness() {
     createController, STEPS, createPresentationState, transitionPresentation,
     createManualEvent, parseCommand, commandForKey, bindInputLifecycle,
     document, window: new EventTarget(),
-    mountInputSettings: (_, actions) => {
-      manualInput = actions.onManual;
-      return {cameraContainer:{},speechContainer:{},setStatus() {},showPresentation() {}};
-    },
     createScriptStore: (steps) => createScriptStore(steps, {getStorage: () => null}),
     mountScriptEditor: () => ({setState() {}}),
+    mountInputSettings: (_, actions) => {
+      inputSettingsActions = actions;
+      return {cameraContainer: {}, speechContainer: {}, showPresentation() {}, setStatus() {}};
+    },
     mountPresentation: (_, onIntent) => {
       dispatchIntent = onIntent;
       return { render(next) { state = next; }, announce() {} };
@@ -54,7 +54,7 @@ async function harness() {
     createSpeechInput: options => {speechInput=options;return speech;},
   }, { filename: 'src/main.js' });
 
-  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,cameraStates,speechStates,manualInput,dispatchIntent,get state(){return state;}};
+  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,inputSettingsActions,cameraStates,speechStates,dispatchIntent,get state(){return state;}};
 }
 
 test('input mode switching is exclusive; rejected restart keeps the selected mode running', async () => {
@@ -97,13 +97,13 @@ test('presentation end blocks input restart until explicit preparation and notif
   assert.equal(h.state.phase,'presenting');assert.equal(h.camera.running,false);
 });
 
-test('manual mode stops both inputs and rejects their later decision callbacks', async () => {
-  const h=await harness();h.cameraActions.onStart();h.manualInput();
+test('manual switch stops both inputs and rejects queued sensor decisions', async () => {
+  const h=await harness();h.speechActions.onStart();
+  h.inputSettingsActions.onManual();
   assert.equal(h.camera.running,false);assert.equal(h.speech.running,false);
-  assert.equal(h.state.phase,'presenting');
   const before=h.state;
-  h.cameraInput.onDecision({...createManualEvent('NEXT',h.state),source:'camera'});
-  h.speechInput.onDecision({...createManualEvent('NEXT',h.state),source:'voice'});
+  assert.equal(h.speechInput.onDecision({...createManualEvent('NEXT',before),source:'voice'}),false);
+  assert.equal(h.cameraInput.onDecision({...createManualEvent('NEXT',before),source:'camera'}),false);
   assert.equal(h.state,before);
   h.dispatchIntent('NEXT');assert.equal(h.state.step,1);
 });

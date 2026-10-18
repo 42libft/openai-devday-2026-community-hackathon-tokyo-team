@@ -90,7 +90,8 @@ scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
 
 const inputSettings = mountInputSettings(root, {
   onManual() {
-    inputMode = null; camera?.stop(); speech?.stop();
+    inputMode = null;
+    camera?.stop(); speech?.stop();
     view.announce('音声とカメラを停止しました。画面のボタンで発表を続けられます。');
   },
 });
@@ -102,9 +103,9 @@ cameraPanel = mountCameraPanel(cameraContainer, {
       cameraPanel.setState({status: 'error', message: '「はじめから」で発表を準備してから再開してください。'});
       return;
     }
+    inputSettings.showPresentation();
     inputMode = 'camera';
     speech.stop('カメラ操作へ切り替えたため音声を停止しました。声を使うときは音声の開始ボタンを押してください。');
-    inputSettings.showPresentation();
     camera.start();
   },
   onStop: () => camera.stop(),
@@ -133,9 +134,9 @@ speechPanel = mountSpeechPanel(speechContainer, {
       speechPanel.setState({status: 'stopped', message: '「はじめから」で発表を準備してから音声を開始してください。'});
       return;
     }
+    inputSettings.showPresentation();
     inputMode = 'voice';
     camera.stop('音声操作へ切り替えたためカメラと画像送信を停止しました。手を使うときはカメラの開始ボタンを押してください。');
-    inputSettings.showPresentation();
     speech.start();
   },
   onStop: () => speech.stop(),
@@ -152,7 +153,10 @@ speech = createSpeechInput({
     return next !== previous;
   },
 });
-if (!speech.supported) { inputSettings.setStatus('speech', {status:'unsupported'}); speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'}); }
+if (!speech.supported) {
+  inputSettings.setStatus('speech', {status:'unsupported'});
+  speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'});
+}
 bindInputLifecycle({ window, document, inputs: [camera, speech] });
 
 document.addEventListener('keydown', (event) => {

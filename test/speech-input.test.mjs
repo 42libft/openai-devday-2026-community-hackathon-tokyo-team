@@ -1,4 +1,6 @@
-import test from 'node:test';
+import test, {afterEach} from 'node:test';
+const openVoices=[];
+afterEach(()=>{for(const voice of openVoices.splice(0))voice.dispose();});
 import assert from 'node:assert/strict';
 import {createSpeechInput, parseSpeechCommand} from '../src/input/speech.js';
 import {createPresentationState, transitionPresentation} from '../src/state/presentation.js';
@@ -10,13 +12,15 @@ test('spoken commands normalize punctuation but reject descriptions, negation an
   for (const text of ['次へと言います','次へじゃない','次へ 前へ','準備','はじめから','検索 アイデア',null,'次へ'+' '.repeat(180)+'しない']) assert.equal(parseSpeechCommand(text), null);
 });
 
-function harness({unsupported = false} = {}) {
+function harness({unsupported = false, delayedAbort = false} = {}) {
+  let at = 10000;
+  const abortedEnds = [];
   let state=createPresentationState();state=transitionPresentation(state,createManualEvent('START',state));
   const instances=[],statuses=[],decisions=[];
   class Recognition {
     constructor(){this.aborted=0;instances.push(this);}
     start(){this.onstart?.();}
-    abort(){this.aborted++;this.onend?.();}
+    abort(){this.aborted++;if(delayedAbort)abortedEnds.push(()=>this.onend?.());else this.onend?.();}
     say(text,index=0,final=true,end=final){this.batch([text],index,final,end);}
     batch(texts,index=0,final=true,end=final){
       const results=Array(index).fill(null);
@@ -24,11 +28,14 @@ function harness({unsupported = false} = {}) {
       this.onresult?.({resultIndex:index,results});if(end)this.onend?.();
     }
   }
-  const voice=createSpeechInput({Recognition:unsupported?null:Recognition,makeId:()=>`speech-${instances.length}`,
+  const voice=createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
+  openVoices.push(voice);
   return {voice,instances,statuses,decisions,get state(){return state;},
-    say(text){instances.at(-1).say(text);},
+    advance:(ms=2000)=>at+=ms,
+    flushAbortedEnds(){for(const end of abortedEnds.splice(0))end();},
     camera(type){state=transitionPresentation(state,{...createManualEvent(type,state),source:'camera'});},
+    say(text){instances.at(-1).say(text);},
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
@@ -115,20 +122,118 @@ test('voice source cannot start, restart, select or search', () => {
   const h=harness();for(const type of ['START','RESTART','SELECT','SEARCH'])assert.equal(transitionPresentation(h.state,{...createManualEvent(type,h.state),source:'voice'}),h.state);
 });
 
+test('a new onset before the prior final stops ambiguous recognition instead of rebasing old speech', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];
+  old.onspeechstart();h.manual('NEXT');old.onspeechstart();
+  old.batch(['次へ','前へ']);
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  assert.equal(old.aborted,1);assert.equal(h.instances.length,1);
+  assert.equal(h.statuses.at(-1).status,'stopped');
+  assert.match(h.statuses.at(-1).message,/開始ボタン/);
 
-test('single-command STOP tolerates a same-session camera or manual revision change', () => {
-  for(const source of ['manual','camera']) {
-    const h=harness();h.voice.start();
-    if(source==='camera')h.camera('NEXT');else h.manual('NEXT');
-    const revision=h.state.revision;h.say('停止');assert.equal(h.state.phase,'stopped');
-    assert.equal(h.decisions[0].baseRevision,revision);
+  // Restarting explicitly must not allow events from the invalidated recognizer.
+  h.voice.start();const fresh=h.instances[1];fresh.onspeechstart();
+  old.onspeechstart();old.say('次へ',2);old.onerror({error:'network'});
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  fresh.say('前へ');assert.equal(h.state.step,0);assert.equal(h.decisions.length,1);
+});
+
+test('overlapping onsets are rejected even without a state change or after interim speech', () => {
+  for (const interim of [false,true]) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(interim)r.say('次へ',0,false);
+    r.onspeechstart();r.say('次へ');
+    assert.equal(h.state.step,0);assert.equal(h.decisions.length,0);
+    assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'stopped');
   }
 });
 
-test('STOP from a previous presentation session does not stop the new presentation', () => {
+test('a late confirmation after overlapping speech cannot confirm a pending detour', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];
+  r.onspeechstart();h.manual('REQUEST_JUMP',{targetStep:2});r.onspeechstart();
+  r.say('確認');
+  assert.equal(h.state.step,0);assert.equal(h.state.pendingJump.targetStep,2);
+  assert.equal(h.decisions.length,0);assert.equal(r.aborted,1);
+});
+
+test('STOP remains valid after a same-session manual or camera revision change', () => {
+  for(const source of ['manual','camera']) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(source==='camera')h.camera('NEXT');else h.manual('NEXT');
+    const revision=h.state.revision;
+    r.say('停止');assert.equal(h.state.phase,'stopped');
+    assert.equal(h.decisions.length,1);assert.equal(h.decisions[0].baseRevision,revision);
+  }
+});
+
+test('STOP from an earlier presentation session remains rejected', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+  h.manual('STOP');h.manual('RESTART');h.manual('START');
+  r.say('停止');assert.equal(h.state.phase,'presenting');assert.equal(h.decisions.length,0);
+});
+
+test('successive identical commands are accepted within 1200ms in distinct recognizers', () => {
+  const h=harness();h.voice.start();h.say('次へ');h.advance(100);h.say('次へ');
+  assert.equal(h.state.step,2);assert.deepEqual(h.decisions.map(e=>e.type),['NEXT','NEXT']);
+});
+
+test('speech final before 6000ms applies; at or after the deadline it stops without applying', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  for(const delay of [5999,6000,6001]) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();r.say('次へ',0,false,false);
+    h.advance(delay);t.mock.timers.tick(delay);
+    if(delay<6000){r.say('次へ',0,true,false);assert.equal(h.state.step,1);}
+    else {assert.equal(h.statuses.at(-1).status,'error');assert.match(h.statuses.at(-1).message,/6秒/);r.say('次へ');assert.equal(h.state.step,0);assert.equal(r.aborted,1);}
+    h.voice.stop();
+  }
+});
+
+test('elapsed deadline rejects a final even if the timeout callback is delayed', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+  h.advance(6000);r.say('次へ');
+  assert.equal(h.state.step,0);assert.equal(h.decisions.length,0);assert.equal(h.instances.length,1);
+  assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');
+});
+
+test('timeout rejects late results and old end after explicitly restarting', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness({delayedAbort:true});h.voice.start();const old=h.instances[0];old.onspeechstart();
+  h.advance(6000);t.mock.timers.tick(6000);h.voice.start();const fresh=h.instances[1];
+  old.say('次へ');h.flushAbortedEnds();old.onerror({error:'network'});assert.equal(h.state.step,0);
+  h.advance(1000);t.mock.timers.tick(1000);fresh.say('次へ',0,true,false);assert.equal(h.state.step,1);
+  const count=h.statuses.length;h.advance(10000);t.mock.timers.tick(10000);
+  assert.equal(h.statuses.length,count);assert.equal(fresh.aborted,0);h.voice.stop();
+});
+
+test('stop, end, error and dispose cancel the wait timer; a new run owns its deadline', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  for(const end of ['stop','end','error','dispose']) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(end==='stop')h.voice.stop();else if(end==='end')r.onend();else if(end==='error')r.onerror({error:'network'});else h.voice.dispose();
+    const count=h.statuses.length;t.mock.timers.tick(6001);assert.equal(h.statuses.length,count);
+  }
+  const h=harness();h.voice.start();h.advance(2000);t.mock.timers.tick(2000);
+  h.voice.stop();h.voice.start();h.advance(4001);t.mock.timers.tick(4001);
+  assert.equal(h.statuses.at(-1).status,'listening');h.say('次へ');assert.equal(h.state.step,1);
+});
+
+test('a first speech onset refreshes its deadline without replacing the captured frame', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const r=h.instances[0];
+  h.advance(2000);t.mock.timers.tick(2000);h.manual('NEXT');r.onspeechstart();
+  h.advance(4001);t.mock.timers.tick(4001);assert.equal(r.aborted,0);
+  r.say('次へ');assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+});
+
+test('automatic continuation owns a fresh timeout and old callbacks cannot end it', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
   const h=harness();h.voice.start();const old=h.instances[0];
-  h.manual('STOP');h.manual('RESTART');h.manual('START');old.say('停止');
-  assert.equal(h.state.phase,'presenting');assert.equal(h.decisions.length,0);assert.equal(h.instances.length,1);
+  h.advance(5000);t.mock.timers.tick(5000);old.say('次へ');const fresh=h.instances[1];
+  h.advance(1001);t.mock.timers.tick(1001);old.onend();old.onerror({error:'network'});old.say('次へ',1);
+  assert.equal(fresh.aborted,0);assert.equal(h.decisions.length,1);assert.equal(h.instances.length,2);
+  h.advance(4999);t.mock.timers.tick(4999);assert.equal(fresh.aborted,1);assert.equal(h.instances.length,2);
+  assert.equal(h.statuses.at(-1).status,'error');
 });
 
 
