@@ -90,6 +90,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     let waitTimer = null;
     let waitGeneration = 0;
     let deadline = Infinity;
+    let waitArmed = false;
     const cancelRunWait = () => {
       clearTimeout(waitTimer);
       waitTimer = null;
@@ -109,6 +110,8 @@ export function createSpeechInput({ getState, onDecision, onStatus,
       retry(WAIT_TIMEOUT_MESSAGE);
     };
     const armWait = () => {
+      if (waitArmed) return;
+      waitArmed = true;
       cancelRunWait();
       deadline = now() + FINAL_WAIT_MS;
       const generation = waitGeneration;
@@ -141,7 +144,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         return;
       }
       speechStarted = true;
-      if (deadline === Infinity) armWait();
+      armWait();
     };
     recognition.onresult = event => {
       if (!current()) return;
@@ -153,7 +156,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         if (!result?.isFinal) {
           // Some browsers emit results without speechstart. Bound that pending
           // utterance too, but never extend its lifetime with more interim text.
-          if (captured && deadline === Infinity) armWait();
+          if (captured && rawTranscript.trim()) armWait();
           notify({status: 'listening', transcript, message: '聞き取り中です。確定するまで操作しません。'});
           continue;
         }
