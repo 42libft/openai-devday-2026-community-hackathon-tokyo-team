@@ -130,3 +130,11 @@ test('STOP from a previous presentation session does not stop the new presentati
   h.manual('STOP');h.manual('RESTART');h.manual('START');old.say('停止');
   assert.equal(h.state.phase,'presenting');assert.equal(h.decisions.length,0);assert.equal(h.instances.length,1);
 });
+
+
+test('nomatch closes the old frame and the next recognizer accepts a valid command', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];old.onnomatch();
+  old.say('次へ',0,true,false);assert.equal(h.decisions.length,0);
+  old.onend();assert.equal(h.instances.length,2);h.say('次へ');
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,1);assert.equal(old.aborted,0);
+});

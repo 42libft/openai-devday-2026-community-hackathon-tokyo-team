@@ -278,3 +278,32 @@ button, h1, h2, h3, p, span { overflow-wrap: anywhere; }
   .camera-gesture-direction { font-size: 0.65rem; }
   .camera-result { gap: 7px 12px; }
 }
+
+
+/* Detailed sensor setup follows the presentation; the compact state stays visible. */
+.input-strip { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 0; border-bottom:1px solid var(--line); }
+.input-strip p { display:flex; flex:1 1 260px; flex-wrap:wrap; gap:6px 16px; font-size:.75rem; color:var(--muted); }
+.input-strip [data-error="true"] { color:#965329; font-weight:650; }
+.input-strip button { font-size:.75rem; padding:8px 12px; }
+.input-settings { margin-top:24px; padding-top:14px; border-top:1px solid var(--line); }
+.input-settings > summary { min-height:44px; cursor:pointer; font-size:.85rem; font-weight:650; }
+.input-settings .speech-panel { margin-top:12px; }
+@media (min-width:761px) and (max-height:800px) {
+  .site-header { min-height:66px; }
+  .workspace-topline { padding:13px 0 12px; }
+  .step-navigation { margin-bottom:14px; }
+  .step-button { min-height:50px; padding:9px 14px; }
+  .slide-stage { min-height:260px; padding:18px 26px; }
+  .slide-content { padding:15px 0 18px; }
+  .slide-number { margin-bottom:6px; }
+  #slide-title { font-size:1.7rem; }
+  #slide-script { margin-top:12px; font-size:1rem; line-height:1.75; }
+  .slide-footer { padding-top:10px; }
+  .control-panel { padding-top:12px; }
+  .status-row { min-height:44px; margin-top:4px; padding-bottom:4px; }
+  .start-panel, .stopped-panel { padding-top:12px; }
+}
+@media (max-width:760px) {
+  .input-strip p { flex-basis:100%; }
+  .input-strip button { flex:1 1 auto; }
+}
