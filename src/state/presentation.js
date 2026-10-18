@@ -190,7 +190,7 @@ export function transitionPresentation(state, event) {
         || event.targetStep === state.step || event.targetStep === state.pendingJump?.targetStep) return state;
       return accept(state, event, {
         pendingJump: { targetStep: event.targetStep },
-        message: `「${STEPS[event.targetStep].title}」への移動候補です。確認すると寄り道します。`,
+        message: `${event.targetStep + 1}枚目への移動候補です。確認すると寄り道します。`,
       });
     }
 
