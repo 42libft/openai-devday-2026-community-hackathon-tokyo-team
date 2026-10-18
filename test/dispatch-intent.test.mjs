@@ -10,6 +10,7 @@ import { createScriptStore } from '../src/script/storage.js';
 
 test('rejected restart preserves active inputs; accepted stop stops both inputs', async () => {
   let dispatchIntent, state, cameraActions, speechActions;
+  const cameraStates=[],speechStates=[];
   const input = () => ({
     running: false,
     stops: 0,
@@ -39,11 +40,11 @@ test('rejected restart preserves active inputs; accepted stop stops both inputs'
     },
     mountCameraPanel: (_, actions) => {
       cameraActions = actions;
-      return { video: {}, setState() {} };
+      return { video: {}, setState(s) {cameraStates.push(s);} };
     },
     mountSpeechPanel: (_, actions) => {
       speechActions = actions;
-      return { setState() {} };
+      return { setState(s) {speechStates.push(s);} };
     },
     createCameraInput: () => camera,
     createSpeechInput: () => speech,
@@ -69,4 +70,9 @@ test('rejected restart preserves active inputs; accepted stop stops both inputs'
   assert.equal(speech.running, false);
   assert.equal(camera.stops, 1);
   assert.equal(speech.stops, 1);
+  assert.equal(cameraStates.at(-1).phase,'stopped');assert.equal(speechStates.at(-1).phase,'stopped');
+  cameraActions.onStart();speechActions.onStart();
+  assert.equal(camera.running,false);assert.equal(speech.running,false);
+  dispatchIntent('RESTART');assert.equal(state.phase,'idle');
+  assert.equal(cameraStates.at(-1).phase,'idle');assert.equal(speechStates.at(-1).phase,'idle');
 });

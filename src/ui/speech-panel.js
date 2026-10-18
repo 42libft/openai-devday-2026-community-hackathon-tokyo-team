@@ -10,14 +10,15 @@ export function mountSpeechPanel(container, {onStart, onStop}) {
   const start = container.querySelector('[data-speech-action="start"]');
   const stop = container.querySelector('[data-speech-action="stop"]');
   start.addEventListener('click', onStart); stop.addEventListener('click', onStop);
-  let state = {status:'idle', transcript:'', supported:true};
+  let state = {phase:'idle',status:'idle', transcript:'', supported:true};
   function setState(update) {
     state = {...state,...update};
     container.dataset.speechStatus = state.status;
     container.querySelector('[data-speech-status-label]').textContent = LABELS[state.status] ?? LABELS.idle;
-    if (state.message) container.querySelector('.speech-live-status').textContent = state.message;
+    if (state.message || state.phase === 'stopped') container.querySelector('.speech-live-status').textContent = state.phase === 'stopped' ? '発表は終了しています。「はじめから」で準備に戻ってから音声を開始してください。' : state.message;
     container.querySelector('.speech-transcript span').textContent = state.transcript || '—';
-    start.disabled = !state.supported || ['starting','listening'].includes(state.status);
+    start.disabled = state.phase === 'stopped' || !state.supported || ['starting','listening'].includes(state.status);
+    start.textContent = state.phase === 'stopped' ? '再準備してから音声を開始' : '同意して音声を開始';
   }
   setState({});
   return {setState, destroy() {start.removeEventListener('click',onStart);stop.removeEventListener('click',onStop);container.remove();}};

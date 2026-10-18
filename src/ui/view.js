@@ -47,7 +47,7 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
           <button type="button" class="button-resume" data-event="RESUME">続きへ戻る <span aria-hidden="true">↩</span></button>
         </section>
         <div class="stopped-panel" id="stopped-panel" hidden>
-          <p>停止中です。もう一度試すときは、最初から始められます。</p>
+          <p>終了した発表はこの位置から再開しません。「はじめから」で再準備できます。</p>
           <button type="button" class="button-primary" data-event="RESTART">はじめから <span aria-hidden="true">↻</span></button>
         </div>
         <section class="control-panel" aria-label="発表の操作">
@@ -56,7 +56,8 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
             <button type="button" class="button-primary next-button" data-event="NEXT">次へ <span aria-hidden="true">→</span></button>
             <button type="button" class="button-quiet undo-button" data-event="UNDO"><span aria-hidden="true">↶</span> 取り消し</button>
           </div>
-          <div class="status-row"><p id="demo-status" role="status" aria-live="polite" aria-atomic="true"></p><button type="button" class="button-stop" data-event="STOP"><span class="stop-symbol" aria-hidden="true"></span> 停止</button></div>
+          <div class="status-row"><p id="demo-status" role="status" aria-live="polite" aria-atomic="true"></p><button type="button" class="button-stop" data-event="STOP" aria-describedby="presentation-stop-hint"><span class="stop-symbol" aria-hidden="true"></span> 発表を終了</button></div>
+          <p class="field-hint" id="presentation-stop-hint">発表を終了するとカメラ・音声も停止します。再開には「はじめから」で再準備が必要です。</p>
         </section>
         <section class="command-panel" aria-labelledby="command-heading">
           <div class="section-heading"><h3 id="command-heading">言葉で操作</h3><span>決まった言葉だけに対応</span></div>

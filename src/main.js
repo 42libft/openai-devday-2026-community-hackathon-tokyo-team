@@ -14,6 +14,8 @@ const root = document.getElementById('app');
 let controller;
 let camera;
 let speech;
+let cameraPanel;
+let speechPanel;
 let scriptEditor;
 const scriptStore = createScriptStore(STEPS);
 const savedScript = scriptStore.load();
@@ -58,6 +60,8 @@ controller = createController({
   transition: transitionPresentation,
   render(state) {
     view.render(state);
+    cameraPanel?.setState({phase: state.phase});
+    speechPanel?.setState({phase: state.phase});
     scriptEditor?.setState({disabled: state.phase !== 'idle'});
   },
 });
@@ -85,7 +89,7 @@ scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
 const cameraContainer = document.createElement('section');
 cameraContainer.setAttribute('aria-label', 'AIカメラ操作');
 root.prepend(cameraContainer);
-const cameraPanel = mountCameraPanel(cameraContainer, {
+cameraPanel = mountCameraPanel(cameraContainer, {
   onStart() {
     if (controller.getState().phase === 'idle') dispatchIntent('START');
     if (controller.getState().phase !== 'presenting') {
@@ -113,9 +117,13 @@ camera = createCameraInput({
 const speechContainer = document.createElement('section');
 speechContainer.setAttribute('aria-label', '音声操作');
 root.prepend(speechContainer);
-const speechPanel = mountSpeechPanel(speechContainer, {
+speechPanel = mountSpeechPanel(speechContainer, {
   onStart() {
     if (controller.getState().phase === 'idle') dispatchIntent('START');
+    if (controller.getState().phase !== 'presenting') {
+      speechPanel.setState({status: 'stopped', message: '「はじめから」で発表を準備してから音声を開始してください。'});
+      return;
+    }
     speech.start();
   },
   onStop: () => speech.stop(),
