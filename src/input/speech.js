@@ -15,11 +15,11 @@ export function parseSpeechCommand(text, options) {
 
 const ERRORS = {
   'not-allowed': 'マイクが許可されていません。ブラウザのマイク設定を確認し、音声を開始し直してください。',
-  'service-not-allowed': 'このブラウザでは音声認識を利用できません。Chromeなどの対応ブラウザ、または文字入力を使ってください。',
+  'service-not-allowed': 'このブラウザでは音声認識を利用できません。Chromeなどの対応ブラウザ、またはボタン・キーボードを使ってください。',
   'audio-capture': 'マイクを取得できません。接続や他のアプリでの使用状況を確認してください。',
   'network': '音声認識に接続できません。通信を確認して、音声を開始し直してください。',
   'no-speech': '声を聞き取れず終了しました。音声を開始し直して、短く話してください。',
-  'language-not-supported': 'この環境で日本語を認識できません。対応ブラウザか文字入力を使ってください。',
+  'language-not-supported': 'この環境で日本語を認識できません。対応ブラウザかボタン・キーボードを使ってください。',
 };
 
 /** Explicit consent only. Audio belongs to the browser's recognition service. */
@@ -45,7 +45,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
   function start(continuing = false) {
     if (disposed || active) return;
     if (!supported) {
-      notify({status: 'unsupported', message: 'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザで開くか、文字入力を使ってください。'});
+      notify({status: 'unsupported', message: 'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザで開くか、ボタン・キーボードを使ってください。'});
       return;
     }
     if (getState().phase !== 'presenting') {
@@ -54,7 +54,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     }
     let recognition;
     try { recognition = new Recognition(); }
-    catch { notify({status: 'error', message: '音声認識を準備できませんでした。対応ブラウザか文字入力を使ってください。'}); return; }
+    catch { notify({status: 'error', message: '音声認識を準備できませんでした。対応ブラウザかボタン・キーボードを使ってください。'}); return; }
     active = recognition;
     const current = () => !disposed && active === recognition;
     let waitTimer = null;
@@ -128,7 +128,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         cancelRunWait();
         if (now() >= deadline) { expire(); return; }
         restartOnEnd = true;
-        const intent = parseSpeechCommand(rawTranscript, { stepCount: getState().stepCount ?? 3 });
+        const intent = parseSpeechCommand(rawTranscript, { stepCount: getState().stepCount ?? 0 });
         const state = getState();
         const stale = state.phase !== 'presenting' || state.sessionEpoch !== utterance.sessionEpoch
           || (intent?.type !== 'STOP' && state.revision !== utterance.baseRevision);

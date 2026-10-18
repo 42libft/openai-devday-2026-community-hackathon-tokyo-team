@@ -12,7 +12,7 @@ async function assertPage(base) {
   const html = await response.text();
   assert.match(html, /data-smoke="team-workspace"/);
   assert.match(html, /id="app"/);
-  assert.match(html, /手の合図でスライド操作/);
+  assert.match(html, /手・声・ボタンでスライド操作/);
   assert.match(html, /カメラ画像はOpenAI、音声はブラウザの認識機能/);
   const paths = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(paths.some((path) => path.endsWith('.js')), 'JavaScript asset');

@@ -17,8 +17,8 @@ test('Japanese commands produce only the specified exact intents', () => {
   for (const [type, phrases] of Object.entries(commands)) {
     for (const phrase of phrases) assert.deepEqual(parseCommand(phrase), { type }, phrase);
   }
-  for (let slide = 1; slide <= 3; slide += 1) {
-    assert.deepEqual(parseCommand(`${slide}枚目へ`), {
+  for (let slide = 1; slide <= 50; slide += 1) {
+    assert.deepEqual(parseCommand(`${slide}枚目へ`, {stepCount:50}), {
       type: 'REQUEST_JUMP', targetStep: slide - 1,
     });
   }
@@ -29,7 +29,7 @@ test('empty, non-string, unknown, and explanatory inputs have no intent', () => 
     undefined, null, 1, {}, ['次へ'], new String('次へ'), '', ' \t\n ',
     '次へ進む予定です', '次へ。', '「次へ」', '前に戻る機能です',
     '続きに戻りますのでお待ちください', '確認してください', '停止したい',
-    'NEXT', 'constructor', '__proto__', '0枚目へ', '4枚目へ', '12枚目へ',
+    'NEXT', 'constructor', '__proto__', '0枚目へ', '1000枚目へ', '01枚目へ',
     '1枚目へ移動', '第1枚目へ', '検索', '検索   ', '検索語',
   ];
   for (const value of rejected) assert.equal(parseCommand(value), null, String(value));
@@ -37,22 +37,15 @@ test('empty, non-string, unknown, and explanatory inputs have no intent', () => 
 
 test('NFKC and surrounding whitespace are accepted without fuzzy matching', () => {
   assert.deepEqual(parseCommand(' \t次へ\n'), { type: 'NEXT' });
-  assert.deepEqual(parseCommand('　２枚目へ　'), { type: 'REQUEST_JUMP', targetStep: 1 });
+  assert.deepEqual(parseCommand('　２枚目へ　', {stepCount:5}), { type: 'REQUEST_JUMP', targetStep: 1 });
   assert.deepEqual(parseCommand('ｷｬﾝｾﾙ'), { type: 'CANCEL_JUMP' });
-  assert.deepEqual(parseCommand('検索　ＡＢＣ　資料 '), { type: 'SEARCH', query: 'ABC 資料' });
+  assert.equal(parseCommand('検索　ＡＢＣ　資料 '), null);
   assert.equal(parseCommand('次 へ'), null);
   assert.equal(parseCommand('次\u200bへ'), null);
 });
 
-test('search requires a separator and a nonempty query of at most 120 characters', () => {
-  assert.deepEqual(parseCommand('検索 説明 用語'), { type: 'SEARCH', query: '説明 用語' });
-  assert.deepEqual(parseCommand('検索\t資料'), { type: 'SEARCH', query: '資料' });
-  assert.deepEqual(parseCommand(`検索 ${'語'.repeat(120)}`), {
-    type: 'SEARCH', query: '語'.repeat(120),
-  });
-  assert.equal(parseCommand(`検索 ${'語'.repeat(121)}`), null);
-  assert.equal(parseCommand(`検索 ${'㍿'.repeat(31)}`), null, 'NFKC expansion also respects the query limit');
-  assert.equal(parseCommand('検索:資料'), null);
+test('retired fictional search commands have no intent', () => {
+  assert.equal(parseCommand('検索 資料'), null);
 });
 
 test('the total input limit is enforced before trimming and after normalization', () => {
@@ -94,7 +87,7 @@ test('each manual action has a fresh identity and captures the current state rev
 test('only documented keyboard shortcuts create intents and space remains native', () => {
   const keys = {
     ArrowRight: 'NEXT', PageDown: 'NEXT', ArrowLeft: 'PREVIOUS', PageUp: 'PREVIOUS',
-    Escape: 'CANCEL_JUMP', u: 'UNDO', U: 'UNDO', r: 'RESUME', R: 'RESUME',
+    Escape: 'CANCEL_JUMP', u: 'UNDO', U: 'UNDO', r: 'RESUME', R: 'RESUME', q: 'STOP', Q: 'STOP',
   };
   for (const [key, type] of Object.entries(keys)) {
     assert.deepEqual(commandForKey({ key }), { type }, key);

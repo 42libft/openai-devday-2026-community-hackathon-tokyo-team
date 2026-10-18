@@ -27,6 +27,8 @@ const KEY_TYPES = new Map([
   ['u', 'UNDO'],
   ['U', 'UNDO'],
   ['r', 'RESUME'],
+  ['q', 'STOP'],
+  ['Q', 'STOP'],
   ['R', 'RESUME'],
 ]);
 
@@ -46,7 +48,7 @@ export function createManualEvent(type, state, payload = {}) {
 }
 
 /** Parse only explicit commands; explanatory sentences have no action. */
-export function parseCommand(text, { stepCount = 3 } = {}) {
+export function parseCommand(text, { stepCount = 0 } = {}) {
   if (typeof text !== 'string' || text.length > 180) return null;
 
   const command = text.normalize('NFKC').trim();
@@ -59,11 +61,7 @@ export function parseCommand(text, { stepCount = 3 } = {}) {
   if (jump) return Number(jump[1]) <= stepCount
     ? { type: 'REQUEST_JUMP', targetStep: Number(jump[1]) - 1 } : null;
 
-  const search = /^検索\s+([\s\S]+)$/u.exec(command);
-  if (!search) return null;
-  const query = search[1].trim();
-  if (!query || query.length > 120) return null;
-  return { type: 'SEARCH', query };
+  return null;
 }
 
 /** Return an intent without handling the browser event or dispatching it. */

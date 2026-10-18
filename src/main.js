@@ -1,6 +1,6 @@
 import { createController } from './controller.js';
-import { STEPS, createPresentationState, transitionPresentation } from './state/presentation.js';
-import { createManualEvent, parseCommand, commandForKey } from './input/manual.js';
+import { createPresentationState, transitionPresentation } from './state/presentation.js';
+import { createManualEvent, commandForKey } from './input/manual.js';
 import { mountPresentation } from './ui/view.js';
 import { createCameraInput } from './input/camera.js';
 import { mountCameraPanel } from './ui/camera-panel.js';
@@ -8,12 +8,11 @@ import { createSpeechInput } from './input/speech.js';
 import { mountSpeechPanel } from './ui/speech-panel.js';
 import { bindInputLifecycle } from './input/lifecycle.js';
 import { mountInputSettings } from './ui/input-settings.js';
-import { createScriptStore } from './script/storage.js';
-import { mountScriptEditor } from './ui/script-editor.js';
 import { createUploadSession, createSlidePresenter } from './slides/upload.js';
 import { loadSlideDeck } from './slides/deck.js';
 import { mountDeckUpload } from './ui/deck-upload.js';
 import './slides.css';
+import './slide-import.css';
 
 const root = document.getElementById('app');
 let controller;
@@ -22,18 +21,11 @@ let speech;
 let inputMode = null;
 let cameraPanel;
 let speechPanel;
-let scriptEditor;
 let uploadedDeck = null;
 let uploadPanel;
 let upload;
 let slidePresenter;
-const scriptStore = createScriptStore(STEPS);
-const savedScript = scriptStore.load();
-let activeSteps = savedScript.steps;
-let scriptSource = savedScript.source;
 const view = mountPresentation(root, dispatchIntent, {
-  getSteps: () => activeSteps,
-  hasCustomScript: () => scriptSource !== 'sample',
   getDeck: () => uploadedDeck,
   onRenderSlide(deck, index, container) {
     slidePresenter ??= createSlidePresenter(container, message => { view.announce(message); view.setSlideError(true); });
@@ -51,16 +43,6 @@ function dispatchIntent(type, payload = {}) {
     view.announce('スライドの読み込みが終わるまでお待ちください。キャンセルもできます。');
     return;
   }
-  if (type === 'COMMAND') {
-    const intent = parseCommand(payload.text, {stepCount: controller.getState().stepCount});
-    if (!intent) {
-      view.announce('対応する操作が見つかりません。「次へ」「取り消し」「続きへ」など、表示された言葉を入力してください。画面は変更していません。');
-      return;
-    }
-    const { type: command, ...parameters } = intent;
-    dispatchIntent(command, parameters);
-    return;
-  }
   const previous = controller.getState();
   const next = controller.dispatch(createManualEvent(type, previous, payload));
   if (next !== previous && (type === 'STOP' || type === 'RESTART')) {
@@ -69,14 +51,13 @@ function dispatchIntent(type, payload = {}) {
   }
   if (next === previous) {
     const reason = previous.phase === 'idle'
-      ? 'まず台本を確認して開始してください。'
+      ? 'スライドを読み込み、内容を確認して開始してください。'
       : previous.phase === 'stopped'
         ? '停止中です。「はじめから」で新しく開始できます。'
         : type === 'UNDO' ? '取り消せる操作はありません。'
           : type === 'RESUME' ? '戻り先はありません。質問への寄り道中に使えます。'
-            : type === 'NEXT' ? '最後の工程です。'
-              : type === 'PREVIOUS' ? '最初の工程です。'
-                : type === 'SEARCH' ? '検索語は120文字以内で入力してください。'
+            : type === 'NEXT' ? '最後のスライドです。'
+              : type === 'PREVIOUS' ? '最初のスライドです。'
                   : '今の状態ではこの操作は使えません。表示中のボタンを確認してください。';
     view.announce(reason);
   }
@@ -89,62 +70,36 @@ controller = createController({
     view.render(state);
     cameraPanel?.setState({phase: state.phase});
     speechPanel?.setState({phase: state.phase});
-    scriptEditor?.setState({disabled: state.phase !== 'idle'});
     uploadPanel?.setState({phase: state.phase, hasDeck: Boolean(uploadedDeck)});
   },
 });
 
 function applyDeck(deck) {
+  const state = controller.getState();
+  if (state.phase !== 'idle') return;
+  const slides = deck.steps.map((step, index) => ({id: `page-${index + 1}`, title: step.title, notes: ''}));
   const previous = uploadedDeck;
   uploadedDeck = deck;
-  if (deck) activeSteps = deck.steps;
-  else {
-    const saved = scriptStore.load();
-    activeSteps = saved.steps; scriptSource = saved.source;
-    scriptEditor?.setState({steps: activeSteps, message: saved.message});
-  }
-  const state = controller.getState();
-  controller.dispatch(createManualEvent('LOAD_DECK', state, {stepCount: activeSteps.length}));
+  const next = controller.dispatch(createManualEvent('LOAD_DECK', state, {slides}));
+  if (next === state) { uploadedDeck = previous; throw new Error('資料のページ情報を確認できません。'); }
+  inputMode = null; camera?.stop(); speech?.stop();
   previous?.destroy();
-  uploadPanel.setState({hasDeck: Boolean(deck), message: deck
-    ? `${deck.name}（${activeSteps.length}枚）を読み込みました。内容を確認して開始してください。`
-    : 'サンプル台本に戻しました。', error: false});
+  uploadPanel.setState({hasDeck: true, message: `${deck.name}（${slides.length}枚）を読み込みました。内容を確認して開始してください。`, error: false});
 }
 uploadPanel = mountDeckUpload(root.querySelector('#deck-upload-slot'), {
   onSelect: file => { if (controller.getState().phase === 'idle') void upload.select(file); },
   onCancel: () => upload.cancel(),
-  onReset: () => { if (controller.getState().phase === 'idle') { upload.cancel(); applyDeck(null); } },
 });
 upload = createUploadSession({
   load: loadSlideDeck,
   canApply: () => controller.getState().phase === 'idle',
   onBusy: busy => {
     uploadPanel.setState({busy});
-    scriptEditor?.setState({disabled: busy || controller.getState().phase !== 'idle'});
-    root.querySelector('[data-event="START"]').disabled = busy || controller.getState().phase !== 'idle';
+    const state = controller.getState();
+    root.querySelector('[data-event="START"]').disabled = busy || state.phase !== 'idle' || !state.stepCount;
   },
   onApply: applyDeck,
   onMessage: (message, error = false) => uploadPanel.setState({message, error}),
-});
-
-scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
-  steps: activeSteps,
-  message: savedScript.message,
-  onSave(steps) {
-    if (controller.getState().phase !== 'idle' || upload.busy || uploadedDeck) {
-      scriptEditor.setState({message: '発表を停止し、「はじめから」で準備に戻ってから編集してください。'});
-      return;
-    }
-    try {
-      const saved = scriptStore.save(steps);
-      activeSteps = saved.steps;
-      scriptSource = saved.source;
-      view.render(controller.getState());
-      scriptEditor.setState({steps: activeSteps, message: saved.message});
-    } catch (error) {
-      scriptEditor.setState({message: error.message || '台本を保存できませんでした。入力内容を確認してください。'});
-    }
-  },
 });
 
 const inputSettings = mountInputSettings(root, {
@@ -181,8 +136,8 @@ camera = createCameraInput({
     const previous = controller.getState();
     const next = controller.dispatch(event);
     view.announce(next === previous
-      ? '今の画面では移動できません。最初・最後の工程、または寄り道の確認状態をご確認ください。'
-      : `AIカメラの判定で${event.type === 'NEXT' ? '次の' : '前の'}工程へ移りました。取り消しもできます。`);
+      ? '今の画面では移動できません。最初・最後のスライド、または寄り道の確認状態をご確認ください。'
+      : `AIカメラの判定で${event.type === 'NEXT' ? '次の' : '前の'}スライドへ移りました。取り消しもできます。`);
   },
 });
 const speechContainer = inputSettings.speechContainer;
@@ -210,13 +165,13 @@ speech = createSpeechInput({
     const previous = controller.getState();
     const next = controller.dispatch(event);
     if (next !== previous && event.type === 'STOP') { inputMode = null; camera.stop(); speech.stop(); }
-    view.announce(next === previous ? '今の画面ではこの音声操作は使えません。工程や寄り道の状態を確認してください。' : next.message);
+    view.announce(next === previous ? '今の画面ではこの音声操作は使えません。スライドや寄り道の状態を確認してください。' : next.message);
     return next !== previous;
   },
 });
 if (!speech.supported) {
   inputSettings.setStatus('speech', {status:'unsupported'});
-  speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'});
+  speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、またはボタン・キーボードを使ってください。'});
 }
 bindInputLifecycle({ window, document, inputs: [camera, speech] });
 
