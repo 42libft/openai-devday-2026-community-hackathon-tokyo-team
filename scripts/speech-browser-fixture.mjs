@@ -4,14 +4,14 @@ import {readFile,writeFile} from 'node:fs/promises';
 const html = await readFile(new URL('../dist/index.html',import.meta.url),'utf8');
 const mock = `window.speechFixture={instances:[],index:0};
 class MockSpeech {
- constructor(){this.aborted=0;speechFixture.instances.push(this);}
+ constructor(){this.aborted=0;this.nextIndex=0;speechFixture.instances.push(this);}
  start(){this.onstart?.();}
  abort(){this.aborted++;this.onend?.();}
- emit(text,index,final=true){const r=[{transcript:text,confidence:0.99}];r.isFinal=final;const results=Array(index+1).fill(null);results[index]=r;this.onresult?.({resultIndex:index,results});}
+ emit(text,index,final=true){const r=[{transcript:text,confidence:0.99}];r.isFinal=final;const results=Array(index+1).fill(null);results[index]=r;this.onresult?.({resultIndex:index,results});if(final)this.onend?.();}
 }
 window.SpeechRecognition=MockSpeech;window.webkitSpeechRecognition=MockSpeech;
 if(navigator.mediaDevices)navigator.mediaDevices.getUserMedia=async()=>{throw new Error('Real sensors prohibited in fixture');};
-window.fixtureSay=(text,final=true,replay=false)=>{const r=speechFixture.instances.at(-1);if(!r)throw new Error('Start mock recognition first');if(!replay)r.onspeechstart?.();r.emit(text,replay?Math.max(0,speechFixture.index-1):speechFixture.index,final);if(final&&!replay)speechFixture.index++;};`;
+window.fixtureSay=(text,final=true,replay=false)=>{const previous=replay?speechFixture.lastFinal:null;const r=previous?.recognition??speechFixture.instances.at(-1);if(!r)throw new Error('Start mock recognition first');const index=previous?.index??r.nextIndex;if(final&&!replay){speechFixture.lastFinal={recognition:r,index};r.nextIndex++;}r.emit(text,index,final);};`;
 const controls=`<aside style="padding:16px;background:#fff4cb;color:#342c19" aria-label="模擬音声の検証専用">
  <strong>検証専用・模擬音声（実マイクは使いません）</strong>
  <button onclick="fixtureSay('次へ',false)">途中の次へ</button>

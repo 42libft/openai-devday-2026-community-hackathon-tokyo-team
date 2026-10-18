@@ -235,3 +235,11 @@ test('automatic continuation owns a fresh timeout and old callbacks cannot end i
   h.advance(4999);t.mock.timers.tick(4999);assert.equal(fresh.aborted,1);assert.equal(h.instances.length,2);
   assert.equal(h.statuses.at(-1).status,'error');
 });
+
+
+test('nomatch closes the old frame and the next recognizer accepts a valid command', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];old.onnomatch();
+  old.say('次へ',0,true,false);assert.equal(h.decisions.length,0);
+  old.onend();assert.equal(h.instances.length,2);h.say('次へ');
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,1);assert.equal(old.aborted,0);
+});
