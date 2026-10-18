@@ -1,0 +1,136 @@
+{
+  "kind": "synthetic-decision-event-comparison",
+  "generatedAt": "2026-10-18T06:02:15.103Z",
+  "command": "node scripts/gesture-comparison.mjs",
+  "sourceSha256": {
+    "src/input/camera.js": "41fdc8f4192f198975a5d5b7d1b0c32a74defcab13b3333ac66d321fedfdf97f",
+    "src/state/presentation.js": "86ab1b4437029b702542beb03f572231da5fd58276bc75a9d89a35049ff1049f",
+    "api/decide.js": "a565426c565424d1b809d68c3bf9b4bc91310275cd282b369168aa06434eeeac"
+  },
+  "input": [
+    {
+      "action": "NEXT",
+      "confidence": 0.99
+    },
+    {
+      "action": "NEXT",
+      "confidence": 0.99
+    },
+    {
+      "action": "NONE",
+      "confidence": 0.99
+    },
+    {
+      "action": "PREVIOUS",
+      "confidence": 0.99
+    },
+    {
+      "action": "PREVIOUS",
+      "confidence": 0.99
+    }
+  ],
+  "initialStep": 0,
+  "stepIndexIsZeroBased": true,
+  "naive": {
+    "dispatches": 4,
+    "acceptedMoves": 4,
+    "finalStep": 0,
+    "finalRevision": 5,
+    "events": [
+      {
+        "action": "NEXT",
+        "confidence": 0.99,
+        "verdict": "action",
+        "beforeStep": 0,
+        "afterStep": 1,
+        "cumulativeMoves": 1
+      },
+      {
+        "action": "NEXT",
+        "confidence": 0.99,
+        "verdict": "action",
+        "beforeStep": 1,
+        "afterStep": 2,
+        "cumulativeMoves": 2
+      },
+      {
+        "action": "NONE",
+        "confidence": 0.99,
+        "verdict": "none",
+        "beforeStep": 2,
+        "afterStep": 2,
+        "cumulativeMoves": 2
+      },
+      {
+        "action": "PREVIOUS",
+        "confidence": 0.99,
+        "verdict": "action",
+        "beforeStep": 2,
+        "afterStep": 1,
+        "cumulativeMoves": 3
+      },
+      {
+        "action": "PREVIOUS",
+        "confidence": 0.99,
+        "verdict": "action",
+        "beforeStep": 1,
+        "afterStep": 0,
+        "cumulativeMoves": 4
+      }
+    ]
+  },
+  "gated": {
+    "dispatches": 2,
+    "acceptedMoves": 2,
+    "finalStep": 0,
+    "finalRevision": 3,
+    "events": [
+      {
+        "action": "NEXT",
+        "confidence": 0.99,
+        "verdict": "action",
+        "beforeStep": 0,
+        "afterStep": 1,
+        "cumulativeMoves": 1
+      },
+      {
+        "action": "NEXT",
+        "confidence": 0.99,
+        "verdict": "held",
+        "beforeStep": 1,
+        "afterStep": 1,
+        "cumulativeMoves": 1
+      },
+      {
+        "action": "NONE",
+        "confidence": 0.99,
+        "verdict": "none",
+        "beforeStep": 1,
+        "afterStep": 1,
+        "cumulativeMoves": 1
+      },
+      {
+        "action": "PREVIOUS",
+        "confidence": 0.99,
+        "verdict": "action",
+        "beforeStep": 1,
+        "afterStep": 0,
+        "cumulativeMoves": 2
+      },
+      {
+        "action": "PREVIOUS",
+        "confidence": 0.99,
+        "verdict": "held",
+        "beforeStep": 0,
+        "afterStep": 0,
+        "cumulativeMoves": 2
+      }
+    ]
+  },
+  "interpretation": "On the first held NEXT pair, naive moves twice while the existing gate moves once. Confident NONE rearms the gate. Both use the production reducer.",
+  "limitations": [
+    "Decisions are predetermined, not outputs of a live API call.",
+    "No camera recognition accuracy, user time saving, or API latency is measured.",
+    "Both runs finish at the same step; the measured difference is unnecessary intermediate transitions."
+  ]
+}

@@ -1,22 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { runInNewContext } from 'node:vm';
 import test from 'node:test';
 import { createServer, preview } from 'vite';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-
-function assertButtonWorks(code) {
-  const button = new EventTarget();
-  const status = { textContent: '未確認' };
-  const elements = { 'smoke-button': button, 'smoke-status': status };
-  runInNewContext(code, {
-    document: { getElementById: (id) => elements[id] },
-  });
-  button.dispatchEvent(new Event('click'));
-  assert.equal(status.textContent, 'JavaScriptの動作を確認しました。');
-}
 
 async function assertPage(base) {
   const response = await fetch(base);
@@ -24,7 +11,9 @@ async function assertPage(base) {
   assert.match(response.headers.get('content-type'), /text\/html/);
   const html = await response.text();
   assert.match(html, /data-smoke="team-workspace"/);
-  assert.match(html, /id="smoke-button"/);
+  assert.match(html, /id="app"/);
+  assert.match(html, /手の合図でスライド操作/);
+  assert.match(html, /カメラ画像はOpenAI、音声はブラウザの認識機能/);
   const paths = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(paths.some((path) => path.endsWith('.js')), 'JavaScript asset');
   assert.ok(paths.some((path) => path.endsWith('.css')), 'CSS asset');
@@ -44,6 +33,12 @@ async function assertPage(base) {
   }
   const missing = await fetch(new URL('missing-smoke-asset.js', base));
   assert.equal(missing.status, 404);
+  const api = await fetch(new URL('api/decide', base));
+  assert.equal(api.status, 405, 'local API is mounted and rejects GET without a model call');
+  const invalid = await fetch(new URL('api/decide', base), {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+  });
+  assert.equal(invalid.status, 400, 'invalid images are rejected before API access');
   return assets;
 }
 
@@ -61,23 +56,16 @@ test('development server serves the page and its local assets', async () => {
   }
 });
 
-test('built static output serves assets and the button works', async () => {
+test('built static output serves the app and local assets', async () => {
   const server = await preview({
     root,
     preview: { host: '127.0.0.1', port: 0, strictPort: false },
   });
   try {
     const port = server.httpServer.address().port;
-    const assets = await assertPage(`http://127.0.0.1:${port}/`);
-    const scripts = assets.filter(({ path }) => path.endsWith('.js'));
-    assert.ok(scripts.length > 0);
-    for (const { text } of scripts) assertButtonWorks(text);
+    await assertPage(`http://127.0.0.1:${port}/`);
   } finally {
     await new Promise((resolve, reject) =>
       server.httpServer.close((error) => error ? reject(error) : resolve()));
   }
-});
-
-test('source button responds without an external service', async () => {
-  assertButtonWorks(await readFile(new URL('../src/main.js', import.meta.url), 'utf8'));
 });

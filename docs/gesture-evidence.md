@@ -1,0 +1,47 @@
+# ジェスチャー操作の根拠と再現手順
+
+発表中に手を出したままでも同じ合図を連続実行せず、一度手を下ろした後に次の操作を受け付ける。現在の対象は固定3工程のNEXT／PREVIOUSで、任意アプリ操作ではない。
+
+## 入力から状態変更まで
+
+1. `src/input/camera.js` の `createCameraInput` が明示的な開始後にカメラを取得する。マイクは取得しない。映像を最大幅480pxのJPEG静止画にし、処理が終わってから約2秒後に次の取得を試みる。
+2. 静止画とrequestId／sessionEpoch／baseRevisionを同一originの `/api/decide` へ送る。画像はこのサーバーからOpenAIへ送信される。端末内推論ではない。
+3. `api/decide.js` がOpenAI `POST /v1/decisions`、model `gpt-6-luna`、画像入力とchoice質問を利用する。開いた掌はNEXT、握り拳はPREVIOUS、手なし・複数手・曖昧さはNONE。実APIの契約は [OpenAI公式Decisionsガイド](https://developers.openai.com/api/docs/guides/decisions) に基づく。
+4. サーバーがconfidenceと確率分布を検査する。どちらかが0.9未満なら、低い方をconfidenceとするNONEへ退避する。不正な分布はconfidence 0のNONE。これは「確実に手がない」という判定と区別される。
+5. `CameraDecisionGate` が応答のID・セッション・版・重複・confidenceを検査する。操作後は確実なNONEまで再実行しない。低信頼NONEでは再開しない。
+6. `src/state/presentation.js` の `transitionPresentation` が同じイベントを再検査し、工程を変更する。停止中・寄り道確認中・古い版のカメラ操作を拒否する。検索・選択・寄り道からの復帰は既存の状態管理に残る。
+
+## 初回と失敗からの復旧
+
+2026-10-18 15:23 JST、公開URL `https://devday-presentation-companion.vercel.app/api/decide` から実Decisions APIへ合成の白画像（320×240 PNG）を1回送り、HTTP 200、NONE、confidence 1、requestId・sessionEpoch・baseRevisionの一致を確認した。Vercel ProductionのSecret設定後に再デプロイ済み。これは本番の認証・画像入力・応答解析の疎通確認であり、実カメラのジェスチャー認識精度やNEXT／PREVIOUS操作の実測ではない。
+
+- 公開HTTPSのURLを直接開き「同意してカメラを開始」を押す。画像をOpenAIへ送る説明を確認してから許可する。発表も同時に開始する。
+- 片手の開いた掌で次へ、握り拳で前へ。次の合図の前に一度手を下ろす。手を保持しても連続移動しない。
+- カメラ拒否・機器なしは端末／ブラウザーの権限や接続を確認して再開する。API認証は運営側で設定を修正する。429は1分待ち、時間切れは通信を確認して再開する。
+- 失敗時は入力を停止してtrackを解放する。画像や上流の生エラー、APIキーを画面へ出さない。操作を誤った場合は既存の「取り消し」を使う。
+- カメラやAPIを利用できなくても、手動ボタンで固定台本・検索・寄り道と復帰を確認できる。手動操作の成功はカメラ／実APIの成功に数えない。
+
+## 同一イベント列での比較
+
+再実行: `node scripts/gesture-comparison.mjs`。結果は [gesture-comparison.json](gesture-comparison.json)。APIやカメラは起動しない。
+
+同じ確定済み列 `NEXT, NEXT, NONE, PREVIOUS, PREVIOUS`、confidence 0.99を、単純な即時実行と本番のCameraDecisionGateに渡した。両方式とも本番の状態reducerを使い、各応答には各方式の現在版に合う新しいIDを付ける。版の不一致で差を作る比較ではない。
+
+| 観測項目 | 単純な即時実行 | 既存gate経由 |
+|---|---:|---:|
+| 最初のNEXT 2件で実際に移動した回数 | 2 | 1 |
+| 全5件の実際の移動回数 | 4 | 2 |
+| 最終工程（0始まり） | 0 | 0 |
+
+この差は、手を保持した状況に相当する重複判定から余分な中間移動を抑える処理の実測である。API認識精度・実ユーザーの時間短縮・実API遅延を測った結果ではない。JSONには入力、各判定の採否、工程遷移、実行時のソースSHA256を残す。
+
+## 4観点に対する追跡可能な根拠
+
+| 観点 | 現在のコード・再現可能な根拠 | 限界 |
+|---|---|---|
+| 新機能の活用 | `api/decide.js` の画像から固定choiceへの判定を、camera入力と状態reducerへ接続。`test/decisions-api.test.mjs` は公式形式・不正分布・低信頼・認証失敗・timeoutを検査 | この比較は実API到達や認識精度の証明ではない。実呼出し・公開先確認の証跡を別に扱う |
+| 使いやすさ | 明示的な開始／停止、エラー別の復旧案内、手動操作、保持による連続移動防止。`test/camera-input.test.mjs` と本JSONで入力失敗・取消し・重複を再現 | 実ユーザーによる理解度・使いやすさの評価は未実施 |
+| 有用性 | 発表者が手を下ろすまで同じ合図を繰り返さない。寄り道復帰は工程・検索語・結果・選択を復元。比較では不要な中間移動を抑える | 会場での操作時間や負担軽減量は未測定。外部アプリの状態復元は対象外 |
+| 独創性 | 画像の意味判定だけで終えず、セッション／版による古い応答拒否、保持gate、寄り道の戻り先を組み合わせて発表の進行へ接続 | 世界初・既存製品より優位との主張や網羅的な先行比較はしていない |
+
+この文書は点数の自己判定ではなく、実装範囲と検証できた範囲の索引である。
