@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f5f1">
-    <meta name="description" content="固定台本を見ながら、手動で進める発表の相棒。3ステップの進行、資料検索、寄り道からの復帰を試すローカルデモです。">
-    <title>発表の相棒 | 手動操作・固定台本</title>
+    <meta name="description" content="カメラの手の合図をDecisions APIで判定する発表の相棒。スライド進行、取消し、質問への寄り道と復帰をひとつの画面で。">
+    <title>発表の相棒 | 手の合図でスライド操作</title>
     <link rel="stylesheet" href="./src/style.css">
     <script type="module" src="./src/main.js"></script>
   </head>
@@ -13,10 +13,10 @@
     <main class="app-shell" data-smoke="team-workspace">
       <header class="site-header">
         <div class="brand"><span class="brand-symbol" aria-hidden="true">↗</span><div><h1>発表の相棒</h1><p class="brand-caption">PRESENTATION COMPANION</p></div></div>
-        <p class="build-label">手動操作・固定台本<span>MVP</span></p>
+        <p class="build-label">手の合図で進める<span>3 STEPS</span></p>
       </header>
       <div id="app" aria-label="発表の操作画面"></div>
-      <footer class="site-footer"><p>発表の相棒 · ローカルデモ</p><p>AI・カメラ・マイク・外部サービスは使用していません。</p></footer>
+      <footer class="site-footer"><p>発表の相棒 · カメラ画像からAIが判定</p><p>カメラ開始後だけ静止画をOpenAIへ送信します。停止すると送信も終了します。マイクは使用しません。</p></footer>
       <noscript>このデモの操作にはJavaScriptを有効にしてください。</noscript>
     </main>
   </body>

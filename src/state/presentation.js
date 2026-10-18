@@ -1,9 +1,9 @@
-/** Fixed scripts and fictional, public demo data. No sensors or remote services. */
+/** Fixed scripts and fictional demo data. Camera decisions use the same reducer. */
 export const STEPS = Object.freeze([
   Object.freeze({
     id: 'intro',
     title: '発表を始める',
-    script: '今日は、発表中の「次へ」「少し寄り道」「元へ戻る」を、手動操作で試します。まず次の工程へ進みます。',
+    script: '開いた手で次へ、握り拳で前へ。カメラ画像をAIが判定し、発表を進めます。手を下ろすと次の合図を受け付けます。ボタンでも同じ操作を試せます。',
   }),
   Object.freeze({
     id: 'demo',
@@ -82,7 +82,9 @@ function validEnvelope(state, event) {
     && !state.seen.includes(event.eventId)
     && Number.isSafeInteger(event.sessionEpoch) && event.sessionEpoch === state.sessionEpoch
     && Number.isSafeInteger(event.baseRevision) && event.baseRevision === state.revision
-    && (event.source === 'manual' || event.source === 'synthetic');
+    && (event.source === 'manual' || event.source === 'synthetic'
+      || (event.source === 'camera' && ['NEXT', 'PREVIOUS'].includes(event.type)
+        && state.phase === 'presenting' && state.pendingJump === null));
 }
 
 function accept(state, event, patch) {

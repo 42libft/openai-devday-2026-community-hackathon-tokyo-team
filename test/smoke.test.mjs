@@ -12,7 +12,8 @@ async function assertPage(base) {
   const html = await response.text();
   assert.match(html, /data-smoke="team-workspace"/);
   assert.match(html, /id="app"/);
-  assert.match(html, /手動操作・固定台本/);
+  assert.match(html, /手の合図でスライド操作/);
+  assert.match(html, /カメラ開始後だけ静止画をOpenAIへ送信/);
   const paths = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(paths.some((path) => path.endsWith('.js')), 'JavaScript asset');
   assert.ok(paths.some((path) => path.endsWith('.css')), 'CSS asset');
@@ -32,6 +33,12 @@ async function assertPage(base) {
   }
   const missing = await fetch(new URL('missing-smoke-asset.js', base));
   assert.equal(missing.status, 404);
+  const api = await fetch(new URL('api/decide', base));
+  assert.equal(api.status, 405, 'local API is mounted and rejects GET without a model call');
+  const invalid = await fetch(new URL('api/decide', base), {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+  });
+  assert.equal(invalid.status, 400, 'invalid images are rejected before API access');
   return assets;
 }
 
