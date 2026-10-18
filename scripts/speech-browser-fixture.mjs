@@ -11,7 +11,7 @@ class MockSpeech {
 }
 window.SpeechRecognition=MockSpeech;window.webkitSpeechRecognition=MockSpeech;
 if(navigator.mediaDevices)navigator.mediaDevices.getUserMedia=async()=>{throw new Error('Real sensors prohibited in fixture');};
-window.fixtureSay=(text,final=true,replay=false)=>{const previous=replay?speechFixture.lastFinal:null;const r=previous?.recognition??speechFixture.instances.at(-1);if(!r)throw new Error('Start mock recognition first');const index=previous?.index??r.nextIndex;if(final&&!replay){speechFixture.lastFinal={recognition:r,index};r.nextIndex++;}r.emit(text,index,final);};`;
+window.fixtureSay=(text,final=true,replay=false)=>{const previous=replay?speechFixture.lastFinal:null;const r=previous?.recognition??speechFixture.instances.at(-1);if(!r)throw new Error('Start mock recognition first');const index=previous?.index??r.nextIndex;if(!final)speechFixture.lastPending={recognition:r,index};if(final&&!replay){speechFixture.lastFinal={recognition:r,index};r.nextIndex++;}r.emit(text,index,final);};`;
 const controls=`<aside style="padding:16px;background:#fff4cb;color:#342c19" aria-label="模擬音声の検証専用">
  <strong>検証専用・模擬音声（実マイクは使いません）</strong>
  <button onclick="fixtureSay('次へ',false)">途中の次へ</button>
@@ -26,6 +26,8 @@ const controls=`<aside style="padding:16px;background:#fff4cb;color:#342c19" ari
  <button onclick="fixtureSay('停止')">発表停止</button>
  <button onclick="speechFixture.instances.at(-1).onerror({error:'not-allowed'})">マイク拒否</button>
  <button onclick="speechFixture.instances.at(-1).onend()">ブラウザ終了</button>
+ <button onclick="speechFixture.instances.at(-1).onerror({error:'no-speech'})">無音通知</button>
+ <button onclick="speechFixture.lastPending.recognition.emit('次へ',speechFixture.lastPending.index,true)">期限切れの確定結果</button>
  <button onclick="speechFixture.instances[0].emit('次へ',99,true)">遅い応答</button>
 </aside>`;
 await writeFile(new URL('../dist/_speech-check.html',import.meta.url),html.replace('</head>',`<script>${mock}</script></head>`).replace('<body>','<body>'+controls));
