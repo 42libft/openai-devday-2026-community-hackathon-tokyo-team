@@ -51,6 +51,10 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
           <button type="button" class="button-resume" data-event="RESUME">続きへ戻る <span aria-hidden="true">↩</span></button>
         </section>
         <section class="control-panel" aria-label="発表の操作">
+          <div class="projection-entry">
+            <button type="button" class="button-secondary" data-event="OPEN_PROJECTION">スライドのみ表示</button>
+            <button type="button" class="button-secondary" data-event="FULLSCREEN_PROJECTION">スライドを全画面表示</button>
+          </div>
           <div class="progress-controls">
             <button type="button" class="button-secondary" data-event="PREVIOUS"><span aria-hidden="true">←</span> 前へ</button>
             <button type="button" class="button-primary next-button" data-event="NEXT">次へ <span aria-hidden="true">→</span></button>
@@ -188,6 +192,8 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
         CANCEL_JUMP: presenting && pending,
         RESUME: canOperate && Boolean(resume),
         RENDER_RETRY: Boolean(deck),
+        OPEN_PROJECTION: presenting,
+        FULLSCREEN_PROJECTION: presenting,
       };
       for (const button of root.querySelectorAll('button[data-event]')) button.disabled = !allowed[button.dataset.event];
       stepButtons.forEach((button, index) => {

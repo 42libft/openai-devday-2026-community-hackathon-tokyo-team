@@ -23,6 +23,7 @@ async function harness() {
   const root = { prepend() {}, querySelector() { return {}; } };
   const document = Object.assign(new EventTarget(), {
     getElementById: () => root,
+    querySelector: () => ({}),
     createElement: () => ({ setAttribute() {} }),
   });
   const source = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
@@ -42,6 +43,7 @@ async function harness() {
     mountDeckUpload: () => ({setState() {}}), createUploadSession,
     loadSlideDeck: async () => { throw new Error('No file in sensor tests'); },
     createSlidePresenter: () => ({show() {}, destroy() {}}),
+    mountProjection: () => ({open() {}, render() {}}),
     mountPresentation: (_, onIntent) => {
       dispatchIntent = onIntent;
       return { render(next) { state = next; }, announce() {} };

@@ -10,7 +10,7 @@
 .has-uploaded-deck { padding: 16px; min-height: 0; }
 .uploaded-slide { width: 100%; min-height: 120px; margin: 12px 0; overflow: hidden; background: #fff; color: var(--ink); }
 .uploaded-slide > p { padding: 24px; font-size: .9rem; }
-.uploaded-slide canvas { display: block; width: 100%; height: auto; }
+.uploaded-slide > canvas { display: block; width: 100%; height: auto; }
 .pptx-page { position: relative; width: 100%; overflow: hidden; }
 .pptx-render-surface { top: 0; left: 0; }
 .slide-render-retry { align-self: flex-end; margin-bottom: 10px; font-size: .7rem; min-height: 32px; }
