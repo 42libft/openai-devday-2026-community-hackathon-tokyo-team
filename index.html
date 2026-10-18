@@ -3,17 +3,21 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Team workspace</title>
+    <meta name="theme-color" content="#f6f5f1">
+    <meta name="description" content="固定台本を見ながら、手動で進める発表の相棒。3ステップの進行、資料検索、寄り道からの復帰を試すローカルデモです。">
+    <title>発表の相棒 | 手動操作・固定台本</title>
     <link rel="stylesheet" href="./src/style.css">
     <script type="module" src="./src/main.js"></script>
   </head>
   <body>
-    <main data-smoke="team-workspace">
-      <p class="eyebrow">Team workspace</p>
-      <h1>開発環境の接続確認</h1>
-      <p>HTML・CSS・JavaScriptを読み込んでいます。</p>
-      <button id="smoke-button" type="button">動作を確認</button>
-      <p id="smoke-status" role="status" aria-live="polite">未確認</p>
+    <main class="app-shell" data-smoke="team-workspace">
+      <header class="site-header">
+        <div class="brand"><span class="brand-symbol" aria-hidden="true">↗</span><div><h1>発表の相棒</h1><p class="brand-caption">PRESENTATION COMPANION</p></div></div>
+        <p class="build-label">手動操作・固定台本<span>MVP</span></p>
+      </header>
+      <div id="app" aria-label="発表の操作画面"></div>
+      <footer class="site-footer"><p>発表の相棒 · ローカルデモ</p><p>AI・カメラ・マイク・外部サービスは使用していません。</p></footer>
+      <noscript>このデモの操作にはJavaScriptを有効にしてください。</noscript>
     </main>
   </body>
 </html>
