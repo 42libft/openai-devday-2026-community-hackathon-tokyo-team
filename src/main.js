@@ -1,5 +1,5 @@
 import { createController } from './controller.js';
-import { createPresentationState, transitionPresentation } from './state/presentation.js';
+import { STEPS, createPresentationState, transitionPresentation } from './state/presentation.js';
 import { createManualEvent, parseCommand, commandForKey } from './input/manual.js';
 import { mountPresentation } from './ui/view.js';
 import { createCameraInput } from './input/camera.js';
@@ -7,12 +7,23 @@ import { mountCameraPanel } from './ui/camera-panel.js';
 import { createSpeechInput } from './input/speech.js';
 import { mountSpeechPanel } from './ui/speech-panel.js';
 import { bindInputLifecycle } from './input/lifecycle.js';
+import { createScriptStore } from './script/storage.js';
+import { mountScriptEditor } from './ui/script-editor.js';
 
 const root = document.getElementById('app');
 let controller;
 let camera;
 let speech;
-const view = mountPresentation(root, dispatchIntent);
+let inputMode = null;
+let scriptEditor;
+const scriptStore = createScriptStore(STEPS);
+const savedScript = scriptStore.load();
+let activeSteps = savedScript.steps;
+let scriptSource = savedScript.source;
+const view = mountPresentation(root, dispatchIntent, {
+  getSteps: () => activeSteps,
+  hasCustomScript: () => scriptSource !== 'sample',
+});
 
 function dispatchIntent(type, payload = {}) {
   if (type === 'COMMAND') {
@@ -27,7 +38,7 @@ function dispatchIntent(type, payload = {}) {
   }
   const previous = controller.getState();
   const next = controller.dispatch(createManualEvent(type, previous, payload));
-  if (next !== previous && (type === 'STOP' || type === 'RESTART')) { camera?.stop(); speech?.stop(); }
+  if (next !== previous && (type === 'STOP' || type === 'RESTART')) { inputMode = null; camera?.stop(); speech?.stop(); }
   if (next === previous) {
     const reason = previous.phase === 'idle'
       ? 'まず台本を確認して開始してください。'
@@ -46,7 +57,30 @@ function dispatchIntent(type, payload = {}) {
 controller = createController({
   initialState: createPresentationState(),
   transition: transitionPresentation,
-  render: view.render,
+  render(state) {
+    view.render(state);
+    scriptEditor?.setState({disabled: state.phase !== 'idle'});
+  },
+});
+
+scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
+  steps: activeSteps,
+  message: savedScript.message,
+  onSave(steps) {
+    if (controller.getState().phase !== 'idle') {
+      scriptEditor.setState({message: '発表を停止し、「はじめから」で準備に戻ってから編集してください。'});
+      return;
+    }
+    try {
+      const saved = scriptStore.save(steps);
+      activeSteps = saved.steps;
+      scriptSource = saved.source;
+      view.render(controller.getState());
+      scriptEditor.setState({steps: activeSteps, message: saved.message});
+    } catch (error) {
+      scriptEditor.setState({message: error.message || '台本を保存できませんでした。入力内容を確認してください。'});
+    }
+  },
 });
 
 const cameraContainer = document.createElement('section');
@@ -59,6 +93,8 @@ const cameraPanel = mountCameraPanel(cameraContainer, {
       cameraPanel.setState({status: 'error', message: '「はじめから」で発表を準備してから再開してください。'});
       return;
     }
+    inputMode = 'camera';
+    speech.stop('カメラ操作へ切り替えたため音声を停止しました。声を使うときは音声の開始ボタンを押してください。');
     camera.start();
   },
   onStop: () => camera.stop(),
@@ -70,6 +106,7 @@ camera = createCameraInput({
   getState: controller.getState,
   onStatus: cameraPanel.setState,
   onDecision(event) {
+    if (inputMode !== 'camera') return false;
     const previous = controller.getState();
     const next = controller.dispatch(event);
     view.announce(next === previous
@@ -82,7 +119,11 @@ speechContainer.setAttribute('aria-label', '音声操作');
 root.prepend(speechContainer);
 const speechPanel = mountSpeechPanel(speechContainer, {
   onStart() {
+    if (!speech.supported) { speech.start(); return; }
     if (controller.getState().phase === 'idle') dispatchIntent('START');
+    if (controller.getState().phase !== 'presenting') { speech.start(); return; }
+    inputMode = 'voice';
+    camera.stop('音声操作へ切り替えたためカメラと画像送信を停止しました。手を使うときはカメラの開始ボタンを押してください。');
     speech.start();
   },
   onStop: () => speech.stop(),
@@ -91,9 +132,10 @@ speech = createSpeechInput({
   getState: controller.getState,
   onStatus: speechPanel.setState,
   onDecision(event) {
+    if (inputMode !== 'voice') return false;
     const previous = controller.getState();
     const next = controller.dispatch(event);
-    if (next !== previous && event.type === 'STOP') { camera.stop(); speech.stop(); }
+    if (next !== previous && event.type === 'STOP') { inputMode = null; camera.stop(); speech.stop(); }
     view.announce(next === previous ? '今の画面ではこの音声操作は使えません。工程や寄り道の状態を確認してください。' : next.message);
     return next !== previous;
   },
