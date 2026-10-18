@@ -19,3 +19,5 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm test
+      - name: Verify fullscreen assets in release build
+        run: node scripts/check-projection-release.mjs

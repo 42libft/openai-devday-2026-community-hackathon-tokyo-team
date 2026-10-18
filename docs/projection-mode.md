@@ -49,3 +49,24 @@ Chromeの配布用ビルドで次を確認した。音声認識・カメラ映�
 この検証ページはローカル専用。配備前には再度 `npm run build` を実行し、`dist/_projection-*` を含めない。公開環境・全ブラウザ・実マイク/カメラは今回未検証。
 
 確認画像: [PPTX全画面](evidence/projection-20261018/pptx-fullscreen.png)、[縦長PDF・390px幅](evidence/projection-20261018/portrait-on-narrow.png)。
+
+## 公開版にボタンがない場合の確認
+
+2026-10-18 17:50 JSTの追加確認では、main `1f3f4a0` の配布用ビルドはChromeの実クリックでネイティブ全画面に入った。一方、公開URLのエントリーJavaScript `index-DG8BkAnM.js` には全画面ボタン・投影領域・Fullscreen APIの呼出しが含まれていなかった。公開版への未反映と、ブラウザによる全画面拒否は区別して確認する。
+
+ビルド後、実際のHTMLが参照しているJavaScriptとCSSを検査できる。
+
+```sh
+npm run build
+node scripts/check-projection-release.mjs
+# ローカルpreviewでも、同じHTMLから配布資産を確認する
+node scripts/check-projection-release.mjs http://127.0.0.1:4173/
+```
+
+採点・予選終了後にPRを取り込んだら、全画面機能を含む検証済みビルドを公開担当が反映し、その後に確認する。マージ成功だけを公開反映の証拠にはしない。
+
+```sh
+node scripts/check-projection-release.mjs https://devday-presentation-companion.vercel.app/
+```
+
+全項目が`true`になった後、新しくページを開いて発表開始→「スライドを全画面表示」→Escで戻ることを確認する。この検査は公開資産の読取りだけで、配備・認証・実センサー・判定API呼出しは行わない。資産に機能が含まれていても、端末・ブラウザの全画面対応や権限まで保証するものではない。
