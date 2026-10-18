@@ -14,28 +14,31 @@ function textElement(tag, className, text) {
 }
 
 /** Stable, manual-only presentation UI. State changes belong to the controller. */
-export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasCustomScript = () => false } = {}) {
+export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasCustomScript = () => false, getDeck = () => null, onRenderSlide = () => {} } = {}) {
   root.innerHTML = `
     <div class="workspace-topline">
       <p id="workspace-context"></p>
       <span id="phase-label" class="phase-pill"></span>
     </div>
-    <nav class="step-navigation" aria-label="発表の3ステップ"></nav>
+    <nav class="step-navigation" aria-label="発表のページ"></nav>
     <div class="workspace-grid">
       <section class="presentation-column" aria-label="台本と進行">
         <section class="slide-stage" aria-labelledby="slide-title">
           <div class="slide-meta"><span id="stage-label"></span><span id="step-count"></span></div>
-          <div class="slide-content">
+          <div class="slide-content" id="script-slide-content">
             <span id="slide-number" class="slide-number" aria-hidden="true"></span>
             <h2 id="slide-title"></h2>
             <p id="slide-script"></p>
           </div>
+          <div id="uploaded-slide" class="uploaded-slide" hidden></div>
+          <button type="button" class="button-secondary slide-render-retry" data-event="RENDER_RETRY" hidden>表示を再試行</button>
           <div class="slide-footer"><span id="script-source">サンプル台本</span><span id="stage-footer-note"></span></div>
           <div class="slide-progress" aria-hidden="true"><span></span></div>
         </section>
+        <div id="deck-upload-slot" aria-label="スライドの読み込み"></div>
         <div id="script-editor-slot" aria-label="台本の編集"></div>
         <div class="start-panel" id="start-panel">
-          <p>全3ステップ。ボタンで進行し、直前の操作を取り消せます。</p>
+          <p id="start-description"></p>
           <button type="button" class="button-primary start-button" data-event="START">台本を確認して開始 <span aria-hidden="true">→</span></button>
         </div>
         <section class="jump-panel" id="jump-panel" aria-labelledby="jump-title" hidden>
@@ -104,8 +107,15 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     selectedTitle: get('#selected-title'), selectedSummary: get('#selected-summary'),
     commandForm: get('#command-form'), command: get('#command-text'), commandSubmit: get('#command-submit'), commandHint: get('#command-hint'),
     scriptSource: get('#script-source'), scriptEditor: get('#script-editor-slot'),
+    scriptContent: get('#script-slide-content'), uploaded: get('#uploaded-slide'), retry: get('.slide-render-retry'), startDescription: get('#start-description'),
   };
-  const stepButtons = getSteps().map((step, index) => {
+  let stepButtons = [], navigationSignature = '';
+  function syncNavigation(steps) {
+    const signature = JSON.stringify(steps.map(step => [step.id, step.title]));
+    if (signature === navigationSignature) return;
+    navigationSignature = signature;
+    get('.step-navigation').replaceChildren();
+    stepButtons = steps.map((step, index) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'step-button';
@@ -117,7 +127,9 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     button.append(textElement('span', 'step-marker', ''));
     get('.step-navigation').append(button);
     return button;
-  });
+    });
+  }
+  syncNavigation(getSteps());
   const resultButtons = DEMO_ITEMS.map((item) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -132,8 +144,8 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     get('#search-results').append(button);
     return button;
   });
-  const actionButtons = [...root.querySelectorAll('button[data-event]')];
   let destroyed = false;
+  let renderError = false, previousDeck = null, previousPage = -1;
   const onClick = (event) => {
     const button = event.target.closest?.('button');
     if (!button || !root.contains(button) || button.disabled) return;
@@ -165,6 +177,10 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     render(state) {
       if (destroyed) return;
       const steps = getSteps();
+      syncNavigation(steps);
+      const deck = getDeck();
+      if (deck !== previousDeck || state.step !== previousPage) renderError = false;
+      previousDeck = deck; previousPage = state.step;
       const phase = PHASE_COPY[state.phase] ?? PHASE_COPY.idle;
       const stepIndex = Math.max(0, Math.min(steps.length - 1, state.step));
       const step = steps[stepIndex];
@@ -182,8 +198,16 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       elements.number.textContent = String(stepIndex + 1).padStart(2, '0');
       elements.title.textContent = step.title;
       elements.script.textContent = step.script;
-      elements.scriptSource.textContent = hasCustomScript() ? '自分の台本' : 'サンプル台本';
-      elements.scriptEditor.hidden = state.phase !== 'idle';
+      elements.scriptSource.textContent = deck ? deck.name : hasCustomScript() ? '自分の台本' : 'サンプル台本';
+      elements.scriptEditor.hidden = state.phase !== 'idle' || Boolean(deck);
+      elements.scriptContent.hidden = Boolean(deck);
+      elements.uploaded.hidden = !deck;
+      elements.retry.hidden = !deck || !renderError;
+      get('.slide-stage').classList.toggle('has-uploaded-deck', Boolean(deck));
+      elements.startDescription.textContent = `全${steps.length}ページ。ボタン・声・手の合図で進行できます。`;
+      const pageBadge = root.ownerDocument.querySelector('.build-label span');
+      if (pageBadge) pageBadge.textContent = `${steps.length} PAGES`;
+      onRenderSlide(deck, stepIndex, elements.uploaded);
       elements.stageNote.textContent = state.phase === 'stopped' ? '進行は停止しています' : resume ? '寄り道中・続きへ戻れます' : '自分のペースで進める';
       elements.progress.style.width = `${((stepIndex + 1) / steps.length) * 100}%`;
       elements.start.hidden = state.phase !== 'idle';
@@ -209,8 +233,9 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
         CONFIRM_JUMP: presenting && pending,
         CANCEL_JUMP: presenting && pending,
         RESUME: canOperate && Boolean(resume),
+        RENDER_RETRY: Boolean(deck),
       };
-      for (const button of actionButtons) button.disabled = !allowed[button.dataset.event];
+      for (const button of root.querySelectorAll('button[data-event]')) button.disabled = !allowed[button.dataset.event];
       stepButtons.forEach((button, index) => {
         button.querySelector('.step-name').textContent = steps[index].title;
         button.setAttribute('aria-label', `${index + 1}枚目「${steps[index].title}」へ寄り道`);
@@ -254,6 +279,7 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       elements.status.textContent = state.message || phase.context;
     },
     announce(message) { if (!destroyed) elements.status.textContent = message; },
+    setSlideError(value) { renderError = value; elements.retry.hidden = !getDeck() || !renderError; },
     destroy() {
       destroyed = true;
       root.removeEventListener('click', onClick);

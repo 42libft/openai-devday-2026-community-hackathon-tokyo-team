@@ -7,6 +7,7 @@ import { STEPS, createPresentationState, transitionPresentation } from '../src/s
 import { createManualEvent, parseCommand, commandForKey } from '../src/input/manual.js';
 import { bindInputLifecycle } from '../src/input/lifecycle.js';
 import { createScriptStore } from '../src/script/storage.js';
+import { createUploadSession } from '../src/slides/upload.js';
 
 async function harness() {
   let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput, inputSettingsActions;
@@ -38,6 +39,9 @@ async function harness() {
       inputSettingsActions = actions;
       return {cameraContainer: {}, speechContainer: {}, showPresentation() {}, setStatus() {}};
     },
+    mountDeckUpload: () => ({setState() {}}), createUploadSession,
+    loadSlideDeck: async () => { throw new Error('No file in sensor tests'); },
+    createSlidePresenter: () => ({show() {}, destroy() {}}),
     mountPresentation: (_, onIntent) => {
       dispatchIntent = onIntent;
       return { render(next) { state = next; }, announce() {} };

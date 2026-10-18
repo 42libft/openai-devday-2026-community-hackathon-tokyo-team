@@ -1,4 +1,4 @@
-/** Fixed scripts and fictional demo data. Camera decisions use the same reducer. */
+/** Sample scripts and fictional search data; uploaded decks supply their own page count. */
 export const STEPS = Object.freeze([
   Object.freeze({
     id: 'intro',
@@ -25,6 +25,7 @@ export const DEMO_ITEMS = Object.freeze([
 ]);
 
 const EVENT_TYPES = new Set([
+  'LOAD_DECK',
   'START', 'NEXT', 'PREVIOUS', 'SEARCH', 'EDIT_QUERY', 'SELECT', 'REQUEST_JUMP',
   'CONFIRM_JUMP', 'CANCEL_JUMP', 'RESUME', 'UNDO', 'STOP', 'RESTART',
 ]);
@@ -56,8 +57,11 @@ function captureUndo(state) {
 }
 
 /** Revision is scoped to the session epoch; a restarted session begins at zero. */
-export function createPresentationState() {
+export const MAX_SLIDES = 100;
+export function createPresentationState(stepCount = STEPS.length) {
+  if (!Number.isInteger(stepCount) || stepCount < 1 || stepCount > MAX_SLIDES) throw new RangeError('スライドは1〜100枚で読み込んでください。');
   return {
+    stepCount,
     phase: 'idle',
     step: 0,
     revision: 0,
@@ -122,10 +126,17 @@ const searchText = (text) => text.normalize('NFKC').toLocaleLowerCase('ja');
 export function transitionPresentation(state, event) {
   if (!validEnvelope(state, event)) return state;
 
+  if (event.type === 'LOAD_DECK') {
+    if (event.source !== 'manual' || state.phase !== 'idle'
+      || !Number.isInteger(event.stepCount) || event.stepCount < 1 || event.stepCount > MAX_SLIDES) return state;
+    return { ...createPresentationState(event.stepCount), sessionEpoch: state.sessionEpoch + 1,
+      message: `${event.stepCount}枚のスライドを準備しました。内容を確認して開始してください。` };
+  }
+
   if (event.type === 'RESTART') {
     if (state.phase !== 'stopped') return state;
     return {
-      ...createPresentationState(),
+      ...createPresentationState(state.stepCount),
       sessionEpoch: state.sessionEpoch + 1,
       message: '新しい発表の準備ができました。「台本を確認して開始」を押してください。',
     };
@@ -153,7 +164,7 @@ export function transitionPresentation(state, event) {
       pendingJump: null,
       resumeSnapshot: null,
       undoSnapshot: null,
-      message: '発表を開始しました。工程 1 / 3 です。',
+      message: `発表を開始しました。工程 1 / ${state.stepCount} です。`,
     });
   }
 
@@ -163,8 +174,8 @@ export function transitionPresentation(state, event) {
     case 'NEXT':
     case 'PREVIOUS': {
       const step = state.step + (event.type === 'NEXT' ? 1 : -1);
-      if (step < 0 || step >= STEPS.length) return state;
-      return changeFrame(state, event, { step, message: `工程 ${step + 1} / ${STEPS.length} に移りました。` });
+      if (step < 0 || step >= state.stepCount) return state;
+      return changeFrame(state, event, { step, message: `工程 ${step + 1} / ${state.stepCount} に移りました。` });
     }
 
     case 'EDIT_QUERY': {
@@ -195,7 +206,7 @@ export function transitionPresentation(state, event) {
 
     case 'REQUEST_JUMP': {
       if (state.resumeSnapshot !== null || !Number.isInteger(event.targetStep)
-        || event.targetStep < 0 || event.targetStep >= STEPS.length
+        || event.targetStep < 0 || event.targetStep >= state.stepCount
         || event.targetStep === state.step || event.targetStep === state.pendingJump?.targetStep) return state;
       return accept(state, event, {
         pendingJump: { targetStep: event.targetStep },

@@ -10,6 +10,10 @@ import { bindInputLifecycle } from './input/lifecycle.js';
 import { mountInputSettings } from './ui/input-settings.js';
 import { createScriptStore } from './script/storage.js';
 import { mountScriptEditor } from './ui/script-editor.js';
+import { createUploadSession, createSlidePresenter } from './slides/upload.js';
+import { loadSlideDeck } from './slides/deck.js';
+import { mountDeckUpload } from './ui/deck-upload.js';
+import './slides.css';
 
 const root = document.getElementById('app');
 let controller;
@@ -19,6 +23,10 @@ let inputMode = null;
 let cameraPanel;
 let speechPanel;
 let scriptEditor;
+let uploadedDeck = null;
+let uploadPanel;
+let upload;
+let slidePresenter;
 const scriptStore = createScriptStore(STEPS);
 const savedScript = scriptStore.load();
 let activeSteps = savedScript.steps;
@@ -26,11 +34,25 @@ let scriptSource = savedScript.source;
 const view = mountPresentation(root, dispatchIntent, {
   getSteps: () => activeSteps,
   hasCustomScript: () => scriptSource !== 'sample',
+  getDeck: () => uploadedDeck,
+  onRenderSlide(deck, index, container) {
+    slidePresenter ??= createSlidePresenter(container, message => { view.announce(message); view.setSlideError(true); });
+    void slidePresenter.show(deck, index);
+  },
 });
 
 function dispatchIntent(type, payload = {}) {
+  if (type === 'RENDER_RETRY') {
+    view.setSlideError(false);
+    void slidePresenter?.show(uploadedDeck, controller.getState().step);
+    return;
+  }
+  if (type === 'START' && upload?.busy) {
+    view.announce('スライドの読み込みが終わるまでお待ちください。キャンセルもできます。');
+    return;
+  }
   if (type === 'COMMAND') {
-    const intent = parseCommand(payload.text);
+    const intent = parseCommand(payload.text, {stepCount: controller.getState().stepCount});
     if (!intent) {
       view.announce('対応する操作が見つかりません。「次へ」「取り消し」「続きへ」など、表示された言葉を入力してください。画面は変更していません。');
       return;
@@ -41,7 +63,10 @@ function dispatchIntent(type, payload = {}) {
   }
   const previous = controller.getState();
   const next = controller.dispatch(createManualEvent(type, previous, payload));
-  if (next !== previous && (type === 'STOP' || type === 'RESTART')) { inputMode = null; camera?.stop(); speech?.stop(); }
+  if (next !== previous && (type === 'STOP' || type === 'RESTART')) {
+    if (upload?.busy) upload.cancel();
+    inputMode = null; camera?.stop(); speech?.stop();
+  }
   if (next === previous) {
     const reason = previous.phase === 'idle'
       ? 'まず台本を確認して開始してください。'
@@ -65,14 +90,48 @@ controller = createController({
     cameraPanel?.setState({phase: state.phase});
     speechPanel?.setState({phase: state.phase});
     scriptEditor?.setState({disabled: state.phase !== 'idle'});
+    uploadPanel?.setState({phase: state.phase, hasDeck: Boolean(uploadedDeck)});
   },
+});
+
+function applyDeck(deck) {
+  const previous = uploadedDeck;
+  uploadedDeck = deck;
+  if (deck) activeSteps = deck.steps;
+  else {
+    const saved = scriptStore.load();
+    activeSteps = saved.steps; scriptSource = saved.source;
+    scriptEditor?.setState({steps: activeSteps, message: saved.message});
+  }
+  const state = controller.getState();
+  controller.dispatch(createManualEvent('LOAD_DECK', state, {stepCount: activeSteps.length}));
+  previous?.destroy();
+  uploadPanel.setState({hasDeck: Boolean(deck), message: deck
+    ? `${deck.name}（${activeSteps.length}枚）を読み込みました。内容を確認して開始してください。`
+    : 'サンプル台本に戻しました。', error: false});
+}
+uploadPanel = mountDeckUpload(root.querySelector('#deck-upload-slot'), {
+  onSelect: file => { if (controller.getState().phase === 'idle') void upload.select(file); },
+  onCancel: () => upload.cancel(),
+  onReset: () => { if (controller.getState().phase === 'idle') { upload.cancel(); applyDeck(null); } },
+});
+upload = createUploadSession({
+  load: loadSlideDeck,
+  canApply: () => controller.getState().phase === 'idle',
+  onBusy: busy => {
+    uploadPanel.setState({busy});
+    scriptEditor?.setState({disabled: busy || controller.getState().phase !== 'idle'});
+    root.querySelector('[data-event="START"]').disabled = busy || controller.getState().phase !== 'idle';
+  },
+  onApply: applyDeck,
+  onMessage: (message, error = false) => uploadPanel.setState({message, error}),
 });
 
 scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
   steps: activeSteps,
   message: savedScript.message,
   onSave(steps) {
-    if (controller.getState().phase !== 'idle') {
+    if (controller.getState().phase !== 'idle' || upload.busy || uploadedDeck) {
       scriptEditor.setState({message: '発表を停止し、「はじめから」で準備に戻ってから編集してください。'});
       return;
     }
@@ -98,6 +157,7 @@ const inputSettings = mountInputSettings(root, {
 const cameraContainer = inputSettings.cameraContainer;
 cameraPanel = mountCameraPanel(cameraContainer, {
   onStart() {
+    if (upload.busy) { view.announce('スライドの読み込み完了後にカメラを開始してください。'); return; }
     if (controller.getState().phase === 'idle') dispatchIntent('START');
     if (controller.getState().phase !== 'presenting') {
       cameraPanel.setState({status: 'error', message: '「はじめから」で発表を準備してから再開してください。'});
@@ -128,6 +188,7 @@ camera = createCameraInput({
 const speechContainer = inputSettings.speechContainer;
 speechPanel = mountSpeechPanel(speechContainer, {
   onStart() {
+    if (upload.busy) { view.announce('スライドの読み込み完了後に音声を開始してください。'); return; }
     if (!speech.supported) { speech.start(); return; }
     if (controller.getState().phase === 'idle') dispatchIntent('START');
     if (controller.getState().phase !== 'presenting') {
