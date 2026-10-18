@@ -61,7 +61,17 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.onstart = () => { if (current()) notify({status: 'listening', message: '聞き取り中です。「次へ」「前へ」など、操作する言葉だけを話してください。'}); };
-    recognition.onspeechstart = () => { if (current()) captured = frame(); };
+    recognition.onspeechstart = () => {
+      if (!current()) return;
+      // Results have no utterance ID. A second onset before the prior final
+      // makes their ownership ambiguous; never rebase a late result onto it.
+      if (captured) {
+        captured = null;
+        stop('前の発話を処理する前に次の声を検出したため、音声を停止しました。開始ボタンを押し直し、操作を1つずつ話してください。');
+        return;
+      }
+      captured = frame();
+    };
     recognition.onresult = event => {
       if (!current()) return;
       for (let index = Math.max(0, event.resultIndex ?? 0); index < event.results.length; index++) {
