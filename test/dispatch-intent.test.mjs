@@ -3,9 +3,10 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { createController } from '../src/controller.js';
-import { createPresentationState, transitionPresentation } from '../src/state/presentation.js';
+import { STEPS, createPresentationState, transitionPresentation } from '../src/state/presentation.js';
 import { createManualEvent, parseCommand, commandForKey } from '../src/input/manual.js';
 import { bindInputLifecycle } from '../src/input/lifecycle.js';
+import { createScriptStore } from '../src/script/storage.js';
 
 async function harness() {
   let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput;
@@ -17,7 +18,7 @@ async function harness() {
   });
   const camera = input();
   const speech = { ...input(), supported: true };
-  const root = { prepend() {} };
+  const root = { prepend() {}, querySelector() { return {}; } };
   const document = Object.assign(new EventTarget(), {
     getElementById: () => root,
     createElement: () => ({ setAttribute() {} }),
@@ -27,9 +28,11 @@ async function harness() {
   // Execute the real entry point, binding its imports below. Only browser UI and
   // sensor adapters are replaced; dispatch, command parsing and state stay real.
   runInNewContext(source.replace(/^import\s[^;]+;\r?$/gm, ''), {
-    createController, createPresentationState, transitionPresentation,
+    createController, STEPS, createPresentationState, transitionPresentation,
     createManualEvent, parseCommand, commandForKey, bindInputLifecycle,
     document, window: new EventTarget(),
+    createScriptStore: (steps) => createScriptStore(steps, {getStorage: () => null}),
+    mountScriptEditor: () => ({setState() {}}),
     mountPresentation: (_, onIntent) => {
       dispatchIntent = onIntent;
       return { render(next) { state = next; }, announce() {} };

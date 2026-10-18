@@ -1,0 +1,25 @@
+.script-editor { margin-top: 18px; min-width: 0; }
+.script-editor-details { border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.script-editor-details > summary { padding: 14px 17px; color: var(--ink); font-size: 0.8rem; font-weight: 650; line-height: 1.7; cursor: pointer; overflow-wrap: anywhere; }
+.script-editor-details > summary:hover { color: var(--blue); background: #f5f7fb; border-radius: 10px; }
+.script-editor-details > summary:focus-visible { outline: 3px solid #e0a13a; outline-offset: 3px; border-radius: 9px; }
+.script-editor-details[open] > summary { border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+.script-editor-content { max-width: 56rem; padding: 15px 17px 18px; }
+.script-editor-description { max-width: 48em; color: var(--muted); font-size: 0.75rem; line-height: 1.85; }
+.script-editor-form { display: grid; gap: 18px; margin-top: 18px; }
+.script-editor-step { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; min-width: 0; margin: 0; padding: 14px 0 0; border: 0; border-top: 1px solid var(--line); }
+.script-editor-step legend { padding: 0 8px 0 0; color: #526272; font-size: 0.7rem; font-weight: 650; line-height: 1.6; }
+.script-editor-step label { color: #526272; font-size: 0.72rem; font-weight: 650; line-height: 1.7; }
+.script-editor-step input + label { margin-top: 7px; }
+.script-editor-step textarea { display: block; width: 100%; min-width: 0; min-height: 7.5rem; resize: vertical; border: 1px solid #cbd0d4; border-radius: 9px; background: #fff; padding: 10px 12px; color: var(--ink); font: inherit; font-size: 0.875rem; line-height: 1.7; }
+.script-editor-step textarea:focus-visible { outline: 3px solid #e0a13a; outline-offset: 3px; }
+.script-editor-step textarea:disabled { color: #858c94; background: #f0f1ee; border-color: #e1e3df; }
+.script-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 15px; }
+.script-editor-status { flex: 1 1 220px; color: #4d6073; font-size: 0.73rem; line-height: 1.8; white-space: pre-line; }
+@media (max-width: 760px) {
+  .script-editor-content { padding: 14px 15px 17px; }
+  .script-editor-details > summary { padding: 14px 15px; }
+  .script-editor-actions { align-items: stretch; flex-direction: column; }
+  .script-editor-actions button { width: 100%; }
+  .script-editor-status { flex-basis: auto; }
+}
