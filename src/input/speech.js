@@ -37,7 +37,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     notify({status: 'stopped', message});
   }
 
-  function start() {
+  function start(continuing = false) {
     if (disposed || active) return;
     if (!supported) {
       notify({status: 'unsupported', message: 'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザで開くか、文字入力を使ってください。'});
@@ -54,14 +54,16 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     const current = () => !disposed && active === recognition;
     const runId = makeId();
     const seen = new Set();
-    let captured = null;
+    // One recognizer owns one command and one immutable presentation frame.
+    let captured = frame();
+    const sessionEpoch = captured.sessionEpoch;
+    let restartOnEnd = false;
     let last = {command: '', at: -Infinity};
     recognition.lang = 'ja-JP';
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.onstart = () => { if (current()) notify({status: 'listening', message: '聞き取り中です。「次へ」「前へ」など、操作する言葉だけを話してください。'}); };
-    recognition.onspeechstart = () => { if (current()) captured = frame(); };
     recognition.onresult = event => {
       if (!current()) return;
       for (let index = Math.max(0, event.resultIndex ?? 0); index < event.results.length; index++) {
@@ -72,14 +74,15 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         if (!result?.isFinal) { notify({status: 'listening', transcript, message: '聞き取り中です。確定するまで操作しません。'}); continue; }
         if (seen.has(index)) continue;
         seen.add(index);
-        // A result event can contain several finals. Only speechstart arms one
-        // final result; accepting or rejecting it must not rebase later results.
+        // A single-shot run consumes at most one final, including rejections.
+        // Only a new recognizer may capture the next presentation frame.
         const utterance = captured;
         captured = null;
         if (!utterance) {
           notify({status: 'listening', transcript, message: '一度の発話で受け付ける操作は1つです。次の操作は改めて話してください。'});
           continue;
         }
+        restartOnEnd = true;
         const intent = parseSpeechCommand(rawTranscript);
         const state = getState();
         const stale = state.phase !== 'presenting' || state.sessionEpoch !== utterance.sessionEpoch || state.revision !== utterance.baseRevision;
@@ -98,7 +101,11 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         if (current()) notify({status: 'listening', transcript, message: applied === false ? '今の画面ではこの操作を実行できません。画面の案内を確認してください。' : '音声の操作を受け付けました。取り消しもできます。'});
       }
     };
-    recognition.onnomatch = () => { if (current()) notify({status: 'listening', message: '聞き取れませんでした。短い操作語でもう一度話してください。'}); };
+    recognition.onnomatch = () => {
+      if (!current()) return;
+      captured = null; restartOnEnd = true;
+      notify({status: 'listening', message: '聞き取れませんでした。短い操作語でもう一度話してください。'});
+    };
     recognition.onerror = event => {
       if (!current()) return;
       active = null;
@@ -108,9 +115,15 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     recognition.onend = () => {
       if (!current()) return;
       active = null;
+      const state = getState();
+      if (restartOnEnd && state.phase === 'presenting' && state.sessionEpoch === sessionEpoch) {
+        start(true);
+        return;
+      }
       notify({status: 'stopped', message: 'ブラウザの音声認識が終了しました。続けるときは音声を開始し直してください。'});
     };
-    notify({status: 'starting', transcript: '', message: 'マイクの許可を確認しています。'});
+    notify({status: 'starting', ...(continuing ? {} : {transcript: ''}),
+      message: continuing ? '次の操作を聞き取る準備をしています。' : 'マイクの許可を確認しています。'});
     try { recognition.start(); }
     catch { if (current()) { active = null; notify({status: 'error', message: '音声認識を開始できませんでした。マイクの許可と対応ブラウザを確認してください。'}); } }
   }

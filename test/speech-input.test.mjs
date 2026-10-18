@@ -11,106 +11,105 @@ test('spoken commands normalize punctuation but reject descriptions, negation an
 });
 
 function harness({unsupported = false} = {}) {
-  let state = createPresentationState();
-  state = transitionPresentation(state, createManualEvent('START', state));
-  let at = 10000;
-  const instances = [], statuses = [], decisions = [];
+  let state=createPresentationState();state=transitionPresentation(state,createManualEvent('START',state));
+  const instances=[],statuses=[],decisions=[];
   class Recognition {
-    constructor() {this.aborted=0;instances.push(this);}
-    start() {this.started=true;this.onstart?.();}
-    abort() {this.aborted++;this.onend?.();}
-    say(text,index=0,final=true) {this.batch([text],index,final);}
-    batch(texts,index=0,final=true) {const results=Array(index).fill(null);for(const text of texts){const result=[{transcript:text,confidence:0.99}];result.isFinal=final;results.push(result);}this.onresult?.({resultIndex:index,results});}
+    constructor(){this.aborted=0;instances.push(this);}
+    start(){this.onstart?.();}
+    abort(){this.aborted++;this.onend?.();}
+    say(text,index=0,final=true,end=final){this.batch([text],index,final,end);}
+    batch(texts,index=0,final=true,end=final){
+      const results=Array(index).fill(null);
+      for(const text of texts){const r=[{transcript:text,confidence:1}];r.isFinal=final;results.push(r);}
+      this.onresult?.({resultIndex:index,results});if(end)this.onend?.();
+    }
   }
-  const voice = createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
+  const voice=createSpeechInput({Recognition:unsupported?null:Recognition,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
-  return {voice,instances,statuses,decisions,get state(){return state;},advance:()=>at+=2000,
+  return {voice,instances,statuses,decisions,get state(){return state;},
+    say(text){instances.at(-1).say(text);},
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
-test('microphone starts only explicitly; only final results act; duplicate result indices are ignored', () => {
-  const h=harness(); assert.equal(h.instances.length,0); h.voice.start(); h.voice.start();
-  assert.equal(h.instances.length,1); const r=h.instances[0]; assert.equal(r.lang,'ja-JP');
-  r.onspeechstart();
-  r.say('次へ',0,false); assert.equal(h.state.step,0);
-  r.say('次へ'); assert.equal(h.state.step,1); assert.equal(h.decisions[0].source,'voice');
-  r.say('次へ'); assert.equal(h.state.step,1); assert.equal(h.decisions.length,1);
-  r.say('次へ',1); assert.equal(h.state.step,1);
-  h.advance();r.onspeechstart();r.say('次へ',2);assert.equal(h.state.step,2);
+test('single-command sessions accept successive commands without synthetic speechstart events', () => {
+  const h=harness();assert.equal(h.instances.length,0);h.voice.start();h.voice.start();
+  const first=h.instances[0];assert.equal(first.continuous,false);assert.equal(first.lang,'ja-JP');
+  first.say('次へ',0,false,false);assert.equal(h.state.step,0);
+  first.say('次へ');assert.equal(h.state.step,1);assert.equal(h.instances.length,2);
+  first.say('次へ',1);assert.equal(h.decisions.length,1,'old recognizer cannot advance a new frame');
+  h.say('次へ');assert.equal(h.state.step,2);h.say('前へ');assert.equal(h.state.step,1);
+  assert.deepEqual(h.decisions.map(e=>e.type),['NEXT','NEXT','PREVIOUS']);
 });
 
-test('stop and dispose invalidate late results even after a new listening session starts', () => {
-  const h=harness();h.voice.start();const old=h.instances[0];
-  h.voice.stop();assert.equal(old.aborted,1);old.say('次へ');assert.equal(h.state.step,0);
-  h.voice.start();old.say('次へ',1);assert.equal(h.state.step,0);
-  h.instances[1].onspeechstart();h.instances[1].say('次へ');assert.equal(h.state.step,1);
-  h.voice.dispose();h.instances[1].say('前へ',1);h.voice.start();assert.equal(h.instances.length,2);assert.equal(h.state.step,1);
+test('explanatory or unmatched speech finishes one run and does not disable later explicit commands', () => {
+  const h=harness();h.voice.start();h.say('それでは説明します');assert.equal(h.decisions.length,0);
+  h.say('次へ');assert.equal(h.state.step,1);
+  h.instances.at(-1).onnomatch();h.instances.at(-1).onend();
+  h.say('前へ');assert.equal(h.state.step,0);
 });
 
-test('a state change during speech invalidates the captured command', () => {
-  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();h.manual('NEXT');
-  r.say('次へ');assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
-  r.onspeechstart();r.say('前へ',1);assert.equal(h.state.step,0);
+test('a run captures its frame once, rejects state changes and never rebases a stale batch', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];h.manual('NEXT');
+  old.onspeechstart?.();old.batch(['次へ','次へ']);
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  old.say('前へ',2);assert.equal(h.state.step,1);
+  h.say('前へ');assert.equal(h.state.step,0);
 });
 
-test('a stale batch stays rejected until a new speechstart, including its later result events', () => {
-  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();h.manual('NEXT');
-  r.batch(['次へ','次へ']);assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
-  h.advance();r.say('前へ',2);assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
-  r.onspeechstart();r.batch(['次へ','次へ']);assert.equal(h.decisions.length,0);
-  r.say('前へ',3);assert.equal(h.state.step,0);assert.equal(h.decisions.length,1);
-});
-
-test('one utterance cannot both propose and confirm a detour, even across result events', () => {
-  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
-  r.batch(['3枚目へ','確認']);assert.equal(h.state.step,0);assert.equal(h.state.pendingJump.targetStep,2);
-  assert.deepEqual(h.decisions.map(e=>e.type),['REQUEST_JUMP']);
-  h.advance();r.say('確認',2);assert.equal(h.state.step,0);assert.equal(h.decisions.length,1);
-  r.onspeechstart();r.say('確認',3);assert.equal(h.state.step,2);assert.equal(h.state.pendingJump,null);
+test('one run cannot both propose and confirm a detour, including later events before end', () => {
+  const h=harness();h.voice.start();const first=h.instances[0];
+  first.batch(['3枚目へ','確認'],0,true,false);
+  assert.equal(h.state.step,0);assert.equal(h.state.pendingJump.targetStep,2);
+  first.say('確認',2,true,false);assert.equal(h.decisions.length,1);
+  first.onend();h.say('確認');assert.equal(h.state.step,2);
   assert.deepEqual(h.decisions.map(e=>e.type),['REQUEST_JUMP','CONFIRM_JUMP']);
 });
 
-test('only a new speechstart arms an operation after missing onset or a rejected final', () => {
+test('duplicate indices and additional finals never execute twice within one run', () => {
   const h=harness();h.voice.start();const r=h.instances[0];
-  r.say('次へ');assert.equal(h.decisions.length,0);
-  r.onspeechstart();r.batch(['次へと言います','次へ'],1);assert.equal(h.decisions.length,0);
-  r.onspeechstart();r.say('前へ',3);assert.equal(h.decisions.length,1);assert.equal(h.state.step,0);
-  r.say('次へ',4);assert.equal(h.decisions.length,1);assert.equal(h.state.step,0);
-  r.onspeechstart();r.say('次へ',5);assert.equal(h.state.step,1);
-  r.onspeechstart();r.say('前へ',6);assert.equal(h.state.step,0);
-  h.advance();r.onspeechstart();r.say('次へ',7);assert.equal(h.state.step,1);
-  r.onspeechstart();r.say('次へ',8);assert.equal(h.state.step,1);assert.equal(h.decisions.length,4);
-  h.advance();r.say('次へ',9);assert.equal(h.state.step,1);assert.equal(h.decisions.length,4);
-  r.onspeechstart();r.say('次へ',10);assert.equal(h.state.step,2);assert.equal(h.decisions.length,5);
+  r.say('次へ',0,true,false);r.say('次へ',0,true,false);r.say('前へ',1,true,false);
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,1);
+  r.onend();h.say('前へ');assert.equal(h.state.step,0);
 });
 
-test('permission/network errors stop recognition without automatic restarts and explicit restart works', () => {
-  for(const error of ['not-allowed','network','audio-capture','no-speech']) {
-    const h=harness();h.voice.start();const r=h.instances[0];r.onerror({error});
-    assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');r.say('次へ');assert.equal(h.state.step,0);
-    h.voice.start();assert.equal(h.instances.length,2);h.instances[1].onspeechstart();h.instances[1].say('次へ');assert.equal(h.state.step,1);
+test('stop and dispose invalidate late results and pending continuation after a processed final', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];old.say('次へ',0,true,false);
+  h.voice.stop();old.onend();old.say('次へ',1);assert.equal(h.instances.length,1);assert.equal(h.state.step,1);
+  h.voice.start();old.say('次へ',2);h.say('前へ');assert.equal(h.state.step,0);
+  const current=h.instances.at(-1);h.voice.dispose();current.say('次へ');h.voice.start();
+  assert.equal(h.state.step,0);assert.equal(current.aborted,1);
+});
+
+test('an earlier presentation session cannot execute a late command or trigger continuation', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];
+  h.manual('STOP');h.manual('RESTART');h.manual('START');old.say('次へ');
+  assert.equal(h.state.step,0);assert.equal(h.decisions.length,0);assert.equal(h.instances.length,1);
+  assert.equal(h.statuses.at(-1).status,'stopped');
+});
+
+test('permission/network errors and unexpected end require explicit restart', () => {
+  for(const error of ['not-allowed','network','audio-capture','no-speech']){
+    const h=harness();h.voice.start();const r=h.instances[0];r.onerror({error});r.onend();
+    assert.equal(r.aborted,1);assert.equal(h.instances.length,1);assert.equal(h.statuses.at(-1).status,'error');
+    h.voice.start();h.say('次へ');assert.equal(h.state.step,1);h.voice.stop();
   }
+  const h=harness();h.voice.start();h.instances[0].onend();assert.equal(h.instances.length,1);
+  assert.equal(h.statuses.at(-1).status,'stopped');
 });
 
-test('unsupported recognition, browser end and construction failures have clear inactive states', () => {
-  const h=harness({unsupported:true});assert.equal(h.voice.supported,false);h.voice.start();assert.equal(h.statuses.at(-1).status,'unsupported');
-  const ready=harness();ready.voice.start();ready.instances[0].onend();ready.instances[0].say('次へ');assert.equal(ready.state.step,0);assert.equal(ready.statuses.at(-1).status,'stopped');
-  const statuses=[];const bad=createSpeechInput({Recognition:class {constructor(){throw new Error('failure');}},getState:()=>ready.state,onDecision:()=>assert.fail(),onStatus:s=>statuses.push(s)});
-  bad.start();assert.equal(statuses.at(-1).status,'error');
+test('unsupported recognition and construction failure remain inactive', () => {
+  const h=harness({unsupported:true});h.voice.start();assert.equal(h.statuses.at(-1).status,'unsupported');
+  const statuses=[];createSpeechInput({Recognition:class{constructor(){throw new Error('no');}},getState:()=>({phase:'presenting'}),onDecision:()=>assert.fail(),onStatus:s=>statuses.push(s)}).start();
+  assert.equal(statuses.at(-1).status,'error');
 });
 
-test('voice detour confirmation and resume restore the prior search and selection', () => {
+test('voice detour and resume preserve the selected search; STOP does not start another run', () => {
   const h=harness();h.manual('NEXT');h.manual('SEARCH',{query:'チーム'});h.manual('SELECT',{selectedId:'team-board'});
-  h.voice.start();const r=h.instances[0];r.onspeechstart();r.say('3枚目へ');assert.equal(h.state.pendingJump.targetStep,2);
-  h.advance();r.onspeechstart();r.say('次へ',1);assert.equal(h.state.step,1);assert.notEqual(h.state.pendingJump,null);
-  h.advance();r.onspeechstart();r.say('確認',2);assert.equal(h.state.step,2);assert.equal(h.state.query,'');
-  h.advance();r.onspeechstart();r.say('続きへ',3);assert.equal(h.state.step,1);assert.equal(h.state.query,'チーム');assert.equal(h.state.selectedId,'team-board');
-  h.advance();r.onspeechstart();r.say('停止',4);assert.equal(h.state.phase,'stopped');
+  h.voice.start();h.say('3枚目へ');h.say('確認');assert.equal(h.state.step,2);
+  h.say('続きへ');assert.equal(h.state.step,1);assert.equal(h.state.query,'チーム');assert.equal(h.state.selectedId,'team-board');
+  const count=h.instances.length;h.say('停止');assert.equal(h.state.phase,'stopped');assert.equal(h.instances.length,count);
 });
 
 test('voice source cannot start, restart, select or search', () => {
-  const h=harness();
-  for (const type of ['START','RESTART','SELECT','SEARCH']) {
-    const state=h.state;assert.equal(transitionPresentation(state,{...createManualEvent(type,state),source:'voice'}),state);
-  }
+  const h=harness();for(const type of ['START','RESTART','SELECT','SEARCH'])assert.equal(transitionPresentation(h.state,{...createManualEvent(type,h.state),source:'voice'}),h.state);
 });
