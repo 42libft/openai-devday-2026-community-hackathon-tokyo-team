@@ -218,7 +218,7 @@ test('stop, end, error and dispose cancel the wait timer; a new run owns its dea
   assert.equal(h.statuses.at(-1).status,'listening');h.say('次へ');assert.equal(h.state.step,1);
 });
 
-test('a first speech onset refreshes its deadline without replacing the captured frame', t => {
+test('a first speech onset starts its deadline without replacing the captured frame', t => {
   t.mock.timers.enable({apis:['setTimeout']});
   const h=harness();h.voice.start();const r=h.instances[0];
   h.advance(2000);t.mock.timers.tick(2000);h.manual('NEXT');r.onspeechstart();
@@ -228,8 +228,8 @@ test('a first speech onset refreshes its deadline without replacing the captured
 
 test('automatic continuation owns a fresh timeout and old callbacks cannot end it', t => {
   t.mock.timers.enable({apis:['setTimeout']});
-  const h=harness();h.voice.start();const old=h.instances[0];
-  h.advance(5000);t.mock.timers.tick(5000);old.say('次へ');const fresh=h.instances[1];
+  const h=harness();h.voice.start();const old=h.instances[0];old.onspeechstart();
+  h.advance(5000);t.mock.timers.tick(5000);old.say('次へ');const fresh=h.instances[1];fresh.onspeechstart();
   h.advance(1001);t.mock.timers.tick(1001);old.onend();old.onerror({error:'network'});old.say('次へ',1);
   assert.equal(fresh.aborted,0);assert.equal(h.decisions.length,1);assert.equal(h.instances.length,2);
   h.advance(4999);t.mock.timers.tick(4999);assert.equal(fresh.aborted,1);assert.equal(h.instances.length,2);
@@ -249,4 +249,22 @@ test('nomatch closes the old frame and the next recognizer accepts a valid comma
   old.say('次へ',0,true,false);assert.equal(h.decisions.length,0);
   old.onend();assert.equal(h.instances.length,2);h.say('次へ');
   assert.equal(h.state.step,1);assert.equal(h.decisions.length,1);assert.equal(old.aborted,0);
+});
+
+
+test('silent listening remains active beyond six seconds and a final without onset still acts', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const r=h.instances[0];
+  r.say('   ',0,false,false);h.advance(12000);t.mock.timers.tick(12000);
+  assert.equal(r.aborted,0);assert.equal(h.statuses.at(-1).status,'listening');
+  r.say('次へ');assert.equal(h.state.step,1);assert.equal(h.decisions.length,1);
+});
+
+test('first nonempty interim starts one deadline and later interim or onset cannot extend it', t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const h=harness();h.voice.start();const r=h.instances[0];
+  h.advance(10000);t.mock.timers.tick(10000);r.say('次',0,false,false);
+  h.advance(5000);t.mock.timers.tick(5000);r.say('次へ',0,false,false);r.onspeechstart();
+  h.advance(1000);r.say('次へ',0,true,false);
+  assert.equal(h.decisions.length,0);assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'error');
 });
