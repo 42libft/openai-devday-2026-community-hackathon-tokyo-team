@@ -50,19 +50,20 @@ export function buildDecisionRequest(imageDataUrl) {
 }
 
 export function parseDecision(payload) {
-  const safe = { action: 'NONE', confidence: 0 };
-  if (!Array.isArray(payload?.answers) || payload.answers.length !== 1) return safe;
+  const malformed = () => new RequestError(502, 'INVALID_RESPONSE', 'AI応答の形式を確認できませんでした。');
+  if (!Array.isArray(payload?.answers) || payload.answers.length !== 1) throw malformed();
   const a = payload.answers[0];
-  if (a?.name !== 'gesture' || a.type !== 'choice' || !ACTIONS.includes(a.choice)) return safe;
-  if (!Number.isFinite(a.confidence) || a.confidence < 0 || a.confidence > 1) return safe;
-  if (!Array.isArray(a.probabilities) || a.probabilities.length !== ACTIONS.length) return safe;
+  if (a?.name === 'gesture' && a.type === 'refusal') throw new RequestError(422, 'DECISION_REFUSED', 'AIが画像の判定を受け付けませんでした。');
+  if (a?.name !== 'gesture' || a.type !== 'choice' || !ACTIONS.includes(a.choice)) throw malformed();
+  if (!Number.isFinite(a.confidence) || a.confidence < 0 || a.confidence > 1) throw malformed();
+  if (!Array.isArray(a.probabilities) || a.probabilities.length !== ACTIONS.length) throw malformed();
   const probabilities = new Map();
   for (const item of a.probabilities) {
-    if (!ACTIONS.includes(item?.value) || probabilities.has(item.value) || !Number.isFinite(item.probability) || item.probability < 0 || item.probability > 1) return safe;
+    if (!ACTIONS.includes(item?.value) || probabilities.has(item.value) || !Number.isFinite(item.probability) || item.probability < 0 || item.probability > 1) throw malformed();
     probabilities.set(item.value, item.probability);
   }
   const values = [...probabilities.values()];
-  if (Math.abs(values.reduce((sum, p) => sum + p, 0) - 1) > 0.01 || probabilities.get(a.choice) < Math.max(...values)) return safe;
+  if (Math.abs(values.reduce((sum, p) => sum + p, 0) - 1) > 0.01 || probabilities.get(a.choice) < Math.max(...values)) throw malformed();
   if (a.confidence < MIN_CONFIDENCE || probabilities.get(a.choice) < MIN_CONFIDENCE) return { action: 'NONE', confidence: Math.min(a.confidence, probabilities.get(a.choice)) };
   return { action: a.choice, confidence: a.confidence };
 }
@@ -142,8 +143,10 @@ export function createHandler({ fetchImpl = globalThis.fetch, getApiKey = () => 
         }
         const raw = await response.text();
         if (Buffer.byteLength(raw) > 64 * 1024) throw new RequestError(502, 'INVALID_RESPONSE', 'AI応答を確認できませんでした。');
-        try { return parseDecision(JSON.parse(raw)); }
+        let payload;
+        try { payload = JSON.parse(raw); }
         catch { throw new RequestError(502, 'INVALID_RESPONSE', 'AI応答を確認できませんでした。'); }
+        return parseDecision(payload);
       };
       const result = await Promise.race([operation(), new Promise((_, reject) => {
         timer = setTimeout(() => { reject(new RequestError(504, 'TIMEOUT', 'AI判定が時間切れになりました。')); controller.abort(); }, timeoutMs);

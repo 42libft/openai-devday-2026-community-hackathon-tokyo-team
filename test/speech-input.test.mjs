@@ -25,6 +25,7 @@ function harness({unsupported = false} = {}) {
   const voice = createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
   return {voice,instances,statuses,decisions,get state(){return state;},advance:(ms=2000)=>at+=ms,
+    camera(type){state=transitionPresentation(state,{...createManualEvent(type,state),source:'camera'});},
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
@@ -51,6 +52,56 @@ test('a state change during speech invalidates the captured command', () => {
   const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();h.manual('NEXT');
   r.say('次へ');assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
   r.onspeechstart();r.say('前へ',1);assert.equal(h.state.step,0);
+});
+
+test('a new onset before the prior final stops ambiguous recognition instead of rebasing old speech', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];
+  old.onspeechstart();h.manual('NEXT');old.onspeechstart();
+  old.batch(['次へ','前へ']);
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  assert.equal(old.aborted,1);assert.equal(h.instances.length,1);
+  assert.equal(h.statuses.at(-1).status,'stopped');
+  assert.match(h.statuses.at(-1).message,/開始ボタン/);
+
+  // Restarting explicitly must not allow events from the invalidated recognizer.
+  h.voice.start();const fresh=h.instances[1];fresh.onspeechstart();
+  old.onspeechstart();old.say('次へ',2);old.onerror({error:'network'});
+  assert.equal(h.state.step,1);assert.equal(h.decisions.length,0);
+  fresh.say('前へ');assert.equal(h.state.step,0);assert.equal(h.decisions.length,1);
+});
+
+test('overlapping onsets are rejected even without a state change or after interim speech', () => {
+  for (const interim of [false,true]) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(interim)r.say('次へ',0,false);
+    r.onspeechstart();r.say('次へ');
+    assert.equal(h.state.step,0);assert.equal(h.decisions.length,0);
+    assert.equal(r.aborted,1);assert.equal(h.statuses.at(-1).status,'stopped');
+  }
+});
+
+test('a late confirmation after overlapping speech cannot confirm a pending detour', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];
+  r.onspeechstart();h.manual('REQUEST_JUMP',{targetStep:2});r.onspeechstart();
+  r.say('確認');
+  assert.equal(h.state.step,0);assert.equal(h.state.pendingJump.targetStep,2);
+  assert.equal(h.decisions.length,0);assert.equal(r.aborted,1);
+});
+
+test('STOP remains valid after a same-session manual or camera revision change', () => {
+  for(const source of ['manual','camera']) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(source==='camera')h.camera('NEXT');else h.manual('NEXT');
+    const revision=h.state.revision;
+    r.say('停止');assert.equal(h.state.phase,'stopped');
+    assert.equal(h.decisions.length,1);assert.equal(h.decisions[0].baseRevision,revision);
+  }
+});
+
+test('STOP from an earlier presentation session remains rejected', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+  h.manual('STOP');h.manual('RESTART');h.manual('START');
+  r.say('停止');assert.equal(h.state.phase,'presenting');assert.equal(h.decisions.length,0);
 });
 
 test('a stale batch stays rejected until a new speechstart, including its later result events', () => {
@@ -114,7 +165,6 @@ test('voice source cannot start, restart, select or search', () => {
     const state=h.state;assert.equal(transitionPresentation(state,{...createManualEvent(type,state),source:'voice'}),state);
   }
 });
-
 
 test('distinct onsets at 0, 1000, 1199 and 1200 ms are not treated as result replays', () => {
   for(const delay of [0,1000,1199,1200]) {

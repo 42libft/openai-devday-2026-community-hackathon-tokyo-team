@@ -30,7 +30,7 @@ export function mountCameraPanel(container, { onStart, onStop, onCapture, onUndo
       <div class="camera-title-group"><span class="camera-ai-label">AI実判定</span><h2></h2></div>
       <span class="camera-state-badge"></span>
     </div>
-    <p class="camera-consent">開始するとカメラの静止画を約2秒おきにOpenAIへ送り判定します。停止で送信終了。</p>
+    <p class="camera-consent">開始すると音声操作を停止し、カメラの静止画を約2秒おきにOpenAIへ送り判定します。カメラ停止で送信終了。</p>
     <div class="camera-panel-content">
       <div class="camera-preview">
         <video muted playsinline autoplay aria-label="カメラのプレビュー"></video>
@@ -45,7 +45,7 @@ export function mountCameraPanel(container, { onStart, onStop, onCapture, onUndo
         </ol>
         <div class="camera-actions">
           <button type="button" class="button-primary" data-camera-action="start">同意してカメラを開始</button>
-          <button type="button" class="button-secondary camera-stop-button" data-camera-action="stop">停止</button>
+          <button type="button" class="button-secondary camera-stop-button" data-camera-action="stop">カメラを停止</button>
           <button type="button" class="button-secondary" data-camera-action="capture">画像を1回判定</button>
           <div class="camera-manual-control"><span>手動操作</span><button type="button" class="button-quiet" data-camera-action="undo">取り消し</button></div>
         </div>
@@ -72,7 +72,7 @@ export function mountCameraPanel(container, { onStart, onStop, onCapture, onUndo
   const actionValue = panel.querySelector('[data-camera-metric="action"]');
   const confidenceValue = panel.querySelector('[data-camera-metric="confidence"]');
   const latencyValue = panel.querySelector('[data-camera-metric="latency"]');
-  let current = { status: 'idle', message: '説明を確認して開始してください。カメラはまだ起動していません。' };
+  let current = { phase: 'idle', status: 'idle', message: '説明を確認して開始してください。カメラはまだ起動していません。' };
   let destroyed = false;
 
   const callbacks = { start: onStart, stop: onStop, capture: onCapture, undo: onUndo };
@@ -91,13 +91,14 @@ export function mountCameraPanel(container, { onStart, onStop, onCapture, onUndo
     panel.dataset.cameraStatus = status;
     panel.setAttribute('aria-busy', String(busy));
     badge.textContent = STATUS_LABELS[status];
-    startButton.disabled = active;
-    startButton.textContent = status === 'error' || status === 'stopped' ? '同意して再開' : '同意してカメラを開始';
-    stopButton.disabled = false;
-    captureButton.disabled = !active || busy;
+    const presentationStopped = current.phase === 'stopped';
+    startButton.disabled = active || presentationStopped;
+    startButton.textContent = presentationStopped ? '再準備してからカメラを開始' : current.phase !== 'idle' && (status === 'error' || status === 'stopped') ? '同意してカメラを再開' : '同意してカメラを開始';
+    stopButton.disabled = presentationStopped;
+    captureButton.disabled = presentationStopped || !active || busy;
     placeholder.hidden = active;
     placeholder.textContent = status === 'stopped' ? 'カメラを停止しました' : status === 'error' ? 'カメラの状態を確認してください' : '開始後に映像を表示';
-    statusText.textContent = current.message || STATUS_LABELS[status];
+    statusText.textContent = presentationStopped ? '発表は終了しています。「はじめから」で準備に戻ると、カメラを開始できます。' : current.message || STATUS_LABELS[status];
     actionValue.textContent = current.action == null || current.action === ''
       ? '—' : ACTION_LABELS[current.action] ?? String(current.action);
     confidenceValue.textContent = typeof current.confidence === 'number' && Number.isFinite(current.confidence)
