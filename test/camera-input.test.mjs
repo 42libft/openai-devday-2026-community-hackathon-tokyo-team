@@ -177,6 +177,8 @@ test('HTTP failures show only safe recovery text and release the camera', async 
     [429, 'UPSTREAM_RATE_LIMIT', /1分待って/],
     [504, 'TIMEOUT', /時間切れ/],
     [502, 'UNTRUSTED', /通信とカメラ/],
+    [422, 'DECISION_REFUSED', /判定を受け付けません/],
+    [502, 'INVALID_RESPONSE', /応答形式/],
   ]) {
     await t.test(code, async (subtest) => {
       const h = harness(subtest, { fetchImpl: async () => ({
@@ -191,4 +193,14 @@ test('HTTP failures show only safe recovery text and release the camera', async 
       assert.equal(h.events.length, 0);
     });
   }
+});
+
+
+test('refusal or invalid response stops future captures until explicit restart', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let calls=0;
+  const h=harness(t,{fetchImpl:async()=>{calls++;return {ok:false,status:502,json:async()=>({error:{code:'INVALID_RESPONSE'}})};}});
+  await h.camera.start();assert.equal(await h.camera.capture(),false);
+  t.mock.timers.tick(10000);assert.equal(calls,1);assert.equal(await h.camera.capture(),false);
+  assert.equal(h.events.length,0);assert.equal(h.track.stopped,1);assert.equal(h.statuses.at(-1).status,'error');
 });

@@ -10,7 +10,7 @@ const envelope = (state, type, payload = {}) => ({
 });
 const act = (state, type, payload = {}) => transitionPresentation(state, envelope(state, type, payload));
 const start = () => act(createPresentationState(), 'START');
-const frame = ({ step, query, resultIds, selectedId }) => ({ step, query, resultIds, selectedId });
+const frame = ({ step, query, draftQuery, resultIds, selectedId }) => ({ step, query, draftQuery, resultIds, selectedId });
 
 function deepFreeze(value) {
   if (value && typeof value === 'object') {
@@ -259,4 +259,31 @@ test('frozen inputs stay unchanged and all result arrays/bookmarks are independe
   assert.equal(first.phase, 'idle');
   assert.deepEqual(first.seen, []);
   assert.deepEqual(second.resultIds, allIds);
+});
+
+
+test('unsent search text is distinct from results and survives detour, resume and undo', () => {
+  let state=act(start(),'SEARCH',{query:'アイデア'});
+  state=act(state,'SELECT',{selectedId:'team-board'});
+  const previousUndo=state.undoSnapshot;
+  state=act(state,'EDIT_QUERY',{query:'イベント'});
+  assert.equal(state.draftQuery,'イベント');assert.equal(state.query,'アイデア');
+  assert.deepEqual(state.resultIds,['team-board']);assert.equal(state.selectedId,'team-board');
+  assert.deepEqual(state.undoSnapshot,previousUndo,'editing does not create a new undo operation');
+  const original=structuredClone(frame(state));
+  state=act(state,'REQUEST_JUMP',{targetStep:2});state=act(state,'CONFIRM_JUMP');
+  assert.equal(state.draftQuery,'');
+  state=act(state,'EDIT_QUERY',{query:'寄り道の入力'});
+  state=act(state,'RESUME');assert.deepEqual(frame(state),original);
+  state=act(state,'UNDO');assert.equal(state.draftQuery,'寄り道の入力');
+  state=act(state,'RESUME');assert.deepEqual(frame(state),original);
+});
+
+test('editing validates text; undo restores the input captured before the last committed action', () => {
+  let state=start();
+  for(const query of [null,42,'x'.repeat(121)])assert.equal(act(state,'EDIT_QUERY',{query}),state);
+  state=act(state,'EDIT_QUERY',{query:'写真'});
+  assert.equal(act(state,'UNDO'),state,'typing alone is not an undoable committed action');
+  state=act(state,'SEARCH',{query:'写真'});state=act(state,'EDIT_QUERY',{query:'イベント'});
+  state=act(state,'UNDO');assert.equal(state.query,'');assert.equal(state.draftQuery,'写真');
 });

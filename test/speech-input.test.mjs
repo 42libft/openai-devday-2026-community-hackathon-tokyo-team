@@ -28,6 +28,7 @@ function harness({unsupported = false} = {}) {
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
   return {voice,instances,statuses,decisions,get state(){return state;},
     say(text){instances.at(-1).say(text);},
+    camera(type){state=transitionPresentation(state,{...createManualEvent(type,state),source:'camera'});},
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
@@ -112,4 +113,20 @@ test('voice detour and resume preserve the selected search; STOP does not start 
 
 test('voice source cannot start, restart, select or search', () => {
   const h=harness();for(const type of ['START','RESTART','SELECT','SEARCH'])assert.equal(transitionPresentation(h.state,{...createManualEvent(type,h.state),source:'voice'}),h.state);
+});
+
+
+test('single-command STOP tolerates a same-session camera or manual revision change', () => {
+  for(const source of ['manual','camera']) {
+    const h=harness();h.voice.start();
+    if(source==='camera')h.camera('NEXT');else h.manual('NEXT');
+    const revision=h.state.revision;h.say('停止');assert.equal(h.state.phase,'stopped');
+    assert.equal(h.decisions[0].baseRevision,revision);
+  }
+});
+
+test('STOP from a previous presentation session does not stop the new presentation', () => {
+  const h=harness();h.voice.start();const old=h.instances[0];
+  h.manual('STOP');h.manual('RESTART');h.manual('START');old.say('停止');
+  assert.equal(h.state.phase,'presenting');assert.equal(h.decisions.length,0);assert.equal(h.instances.length,1);
 });
