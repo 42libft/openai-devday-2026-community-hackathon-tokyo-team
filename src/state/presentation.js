@@ -25,7 +25,7 @@ export const DEMO_ITEMS = Object.freeze([
 ]);
 
 const EVENT_TYPES = new Set([
-  'START', 'NEXT', 'PREVIOUS', 'SEARCH', 'SELECT', 'REQUEST_JUMP',
+  'START', 'NEXT', 'PREVIOUS', 'SEARCH', 'EDIT_QUERY', 'SELECT', 'REQUEST_JUMP',
   'CONFIRM_JUMP', 'CANCEL_JUMP', 'RESUME', 'UNDO', 'STOP', 'RESTART',
 ]);
 
@@ -36,6 +36,7 @@ function copyFrame(frame) {
   return {
     step: frame.step,
     query: frame.query,
+    draftQuery: frame.draftQuery,
     resultIds: [...frame.resultIds],
     selectedId: frame.selectedId,
   };
@@ -63,6 +64,7 @@ export function createPresentationState() {
     sessionEpoch: 1,
     seen: [],
     query: '',
+    draftQuery: '',
     resultIds: allResultIds(),
     selectedId: null,
     pendingJump: null,
@@ -145,6 +147,7 @@ export function transitionPresentation(state, event) {
       phase: 'presenting',
       step: 0,
       query: '',
+      draftQuery: '',
       resultIds: allResultIds(),
       selectedId: null,
       pendingJump: null,
@@ -164,6 +167,11 @@ export function transitionPresentation(state, event) {
       return changeFrame(state, event, { step, message: `工程 ${step + 1} / ${STEPS.length} に移りました。` });
     }
 
+    case 'EDIT_QUERY': {
+      if (typeof event.query !== 'string' || event.query.length > 120 || event.query === state.draftQuery) return state;
+      return accept(state, event, { draftQuery: event.query });
+    }
+
     case 'SEARCH': {
       if (typeof event.query !== 'string' || event.query.length > 120) return state;
       const needle = searchText(event.query.trim());
@@ -171,6 +179,7 @@ export function transitionPresentation(state, event) {
         searchText(`${item.title} ${item.summary}`).includes(needle)).map((item) => item.id);
       return changeFrame(state, event, {
         query: event.query,
+        draftQuery: event.query,
         resultIds,
         selectedId: null,
         message: resultIds.length === 0 ? '一致する作品はありません。検索語を変えてください。' : `${resultIds.length} 件の作品が見つかりました。`,
@@ -199,6 +208,7 @@ export function transitionPresentation(state, event) {
       return changeFrame(state, event, {
         step: state.pendingJump.targetStep,
         query: '',
+        draftQuery: '',
         resultIds: allResultIds(),
         selectedId: null,
         resumeSnapshot: copyFrame(state),
