@@ -34,10 +34,11 @@ test('PREVIOUS and NONE accepted only with valid complete distributions', () => 
   assert.equal(parseDecision(answer('PREVIOUS')).action, 'PREVIOUS');
   assert.equal(parseDecision(answer('NONE')).action, 'NONE');
   const bad = [null, {}, { answers: [] }, { answers: [{ type: 'refusal', name: 'gesture' }] }];
-  for (const mutate of [a => a.confidence = NaN, a => a.confidence = 1.1, a => a.confidence = 0.89, a => delete a.probabilities, a => a.probabilities[0].probability = NaN, a => a.probabilities[1].value = 'NEXT', a => a.probabilities[0].probability = 0.2, a => a.choice = 'RUN_CODE', a => a.name = 'wrong']) {
+  for (const mutate of [a => a.confidence = NaN, a => a.confidence = 1.1, a => delete a.probabilities, a => a.probabilities[0].probability = NaN, a => a.probabilities[1].value = 'NEXT', a => a.probabilities[0].probability = 0.2, a => a.choice = 'RUN_CODE', a => a.name = 'wrong']) {
     const p = answer(); mutate(p.answers[0]); bad.push(p);
   }
-  for (const p of bad) assert.equal(parseDecision(p).action, 'NONE');
+  for (const p of bad) assert.throws(()=>parseDecision(p), error=>['INVALID_RESPONSE','DECISION_REFUSED'].includes(error.code));
+  assert.deepEqual(parseDecision(answer('NEXT',0.89)),{action:'NONE',confidence:0.89});
 });
 
 test('high confidence with weak winning probability cannot rearm a held camera gesture', () => {
@@ -91,11 +92,28 @@ test('401, 429, 500 and malformed upstream errors never leak raw output', async 
   }
   const malformed = await invoke({}, { fetchImpl: async () => new Response('not-json-secret') }); assert.equal(malformed.statusCode, 502);
   const invalidDistribution = await invoke({}, { fetchImpl: async () => new Response(JSON.stringify({ answers: [{ type: 'choice', name:'gesture', choice:'NEXT', confidence:1 }] })) });
-  assert.equal(invalidDistribution.body.action, 'NONE');
+  assert.equal(invalidDistribution.statusCode,502);assert.equal(invalidDistribution.body.error.code,'INVALID_RESPONSE');assert.equal(invalidDistribution.body.action,undefined);
 });
 
 test('timeout aborts upstream, returns no action, and never retries', async () => {
   let calls = 0, signal;
   const r = await invoke({}, { timeoutMs: 5, fetchImpl: async (_url, opts) => { calls++; signal = opts.signal; return new Promise(() => {}); } });
   assert.equal(r.statusCode, 504); assert.equal(r.body.error.code, 'TIMEOUT'); assert.equal(calls, 1); assert.equal(signal.aborted, true); assert.equal(r.body.action, undefined);
+});
+
+
+test('valid NONE and low confidence remain normal results; refusals and malformed answers are typed failures', async () => {
+  for(const payload of [answer('NONE'),answer('NEXT',0.5)]) {
+    const r=await invoke({}, {fetchImpl:async()=>new Response(JSON.stringify(payload))});
+    assert.equal(r.statusCode,200);assert.equal(r.body.action,'NONE');
+  }
+  for(const [payload,code,status] of [
+    [{answers:[{type:'refusal',name:'gesture',reason:'RAW_SECRET'}]},'DECISION_REFUSED',422],
+    [{answers:[]},'INVALID_RESPONSE',502],
+    [{answers:[{type:'choice',name:'gesture',choice:'RUN_CODE'}]},'INVALID_RESPONSE',502],
+  ]) {
+    const r=await invoke({}, {fetchImpl:async()=>new Response(JSON.stringify(payload))});
+    assert.equal(r.statusCode,status);assert.equal(r.body.error.code,code);
+    assert.equal(r.body.action,undefined);assert.equal(JSON.stringify(r.body).includes('RAW_SECRET'),false);
+  }
 });
