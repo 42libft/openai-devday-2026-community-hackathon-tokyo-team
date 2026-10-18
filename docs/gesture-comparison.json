@@ -1,10 +1,10 @@
 {
   "kind": "synthetic-decision-event-comparison",
-  "generatedAt": "2026-10-18T06:58:31.996Z",
+  "generatedAt": "2026-10-18T07:12:51.494Z",
   "command": "node scripts/gesture-comparison.mjs",
   "sourceSha256": {
     "src/input/camera.js": "41fdc8f4192f198975a5d5b7d1b0c32a74defcab13b3333ac66d321fedfdf97f",
-    "src/state/presentation.js": "d6e2817ab2f75bfed8ced37c7c666e7bea5e33894515ef8da40e79b6e8c320ab",
+    "src/state/presentation.js": "e86f945d1c19d3d912f396b9d6f192c10e00a49e9e498e6fdd2610d921a46f2c",
     "api/decide.js": "a565426c565424d1b809d68c3bf9b4bc91310275cd282b369168aa06434eeeac"
   },
   "input": [
