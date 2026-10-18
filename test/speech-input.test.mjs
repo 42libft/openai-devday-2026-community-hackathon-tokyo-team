@@ -24,7 +24,7 @@ function harness({unsupported = false} = {}) {
   }
   const voice = createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
-  return {voice,instances,statuses,decisions,get state(){return state;},advance:()=>at+=2000,
+  return {voice,instances,statuses,decisions,get state(){return state;},advance:(ms=2000)=>at+=ms,
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
@@ -79,9 +79,9 @@ test('only a new speechstart arms an operation after missing onset or a rejected
   r.onspeechstart();r.say('次へ',5);assert.equal(h.state.step,1);
   r.onspeechstart();r.say('前へ',6);assert.equal(h.state.step,0);
   h.advance();r.onspeechstart();r.say('次へ',7);assert.equal(h.state.step,1);
-  r.onspeechstart();r.say('次へ',8);assert.equal(h.state.step,1);assert.equal(h.decisions.length,4);
-  h.advance();r.say('次へ',9);assert.equal(h.state.step,1);assert.equal(h.decisions.length,4);
-  r.onspeechstart();r.say('次へ',10);assert.equal(h.state.step,2);assert.equal(h.decisions.length,5);
+  r.onspeechstart();r.say('次へ',8);assert.equal(h.state.step,2);assert.equal(h.decisions.length,5);
+  h.advance();r.say('次へ',9);assert.equal(h.state.step,2);assert.equal(h.decisions.length,5);
+  r.onspeechstart();r.say('前へ',10);assert.equal(h.state.step,1);assert.equal(h.decisions.length,6);
 });
 
 test('permission/network errors stop recognition without automatic restarts and explicit restart works', () => {
@@ -112,5 +112,16 @@ test('voice source cannot start, restart, select or search', () => {
   const h=harness();
   for (const type of ['START','RESTART','SELECT','SEARCH']) {
     const state=h.state;assert.equal(transitionPresentation(state,{...createManualEvent(type,state),source:'voice'}),state);
+  }
+});
+
+
+test('distinct onsets at 0, 1000, 1199 and 1200 ms are not treated as result replays', () => {
+  for(const delay of [0,1000,1199,1200]) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();r.say('次へ');
+    h.advance(delay);r.onspeechstart();r.say('次へ',1);
+    assert.equal(h.state.step,2);assert.equal(h.decisions.length,2);
+    r.say('次へ',1);r.say('前へ',2);assert.equal(h.decisions.length,2);
+    r.onspeechstart();r.say('前へ',3);assert.equal(h.state.step,1);
   }
 });

@@ -55,7 +55,6 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     const runId = makeId();
     const seen = new Set();
     let captured = null;
-    let last = {command: '', at: -Infinity};
     recognition.lang = 'ja-JP';
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -87,12 +86,6 @@ export function createSpeechInput({ getState, onDecision, onStatus,
           notify({status: 'listening', transcript, message: stale ? '聞き取り中に画面が変わりました。操作する言葉をもう一度話してください。' : '対応する操作語が見つかりません。「次へ」「取り消し」など、短く話してください。'});
           continue;
         }
-        const command = JSON.stringify(intent);
-        if (command === last.command && now() - last.at < 1200) {
-          notify({status: 'listening', transcript, message: '直前と同じ合図が続いたため、重複する操作を抑えました。'});
-          continue;
-        }
-        last = {command, at: now()};
         notify({transcript});
         const applied = onDecision({...intent, ...utterance, source: 'voice', eventId: `${runId}:${index}`});
         if (current()) notify({status: 'listening', transcript, message: applied === false ? '今の画面ではこの操作を実行できません。画面の案内を確認してください。' : '音声の操作を受け付けました。取り消しもできます。'});
