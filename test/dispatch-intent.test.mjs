@@ -3,14 +3,14 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { createController } from '../src/controller.js';
-import { STEPS, createPresentationState, transitionPresentation } from '../src/state/presentation.js';
+import { createPresentationState, transitionPresentation } from '../src/state/presentation.js';
 import { createManualEvent, parseCommand, commandForKey } from '../src/input/manual.js';
 import { bindInputLifecycle } from '../src/input/lifecycle.js';
-import { createScriptStore } from '../src/script/storage.js';
+import {slides} from './slides-fixture.js';
 import { createUploadSession } from '../src/slides/upload.js';
 
-async function harness() {
-  let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput, inputSettingsActions;
+async function harness({empty=false}={}) {
+  let uploadActions, dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput, inputSettingsActions;
   const cameraStates=[],speechStates=[];
   const input = () => ({
     running: false,
@@ -30,17 +30,15 @@ async function harness() {
   // Execute the real entry point, binding its imports below. Only browser UI and
   // sensor adapters are replaced; dispatch, command parsing and state stay real.
   runInNewContext(source.replace(/^import\s[^;]+;\r?$/gm, ''), {
-    createController, STEPS, createPresentationState, transitionPresentation,
+    createController, createPresentationState: () => createPresentationState(empty ? [] : slides()), transitionPresentation,
     createManualEvent, parseCommand, commandForKey, bindInputLifecycle,
     document, window: new EventTarget(),
-    createScriptStore: (steps) => createScriptStore(steps, {getStorage: () => null}),
-    mountScriptEditor: () => ({setState() {}}),
     mountInputSettings: (_, actions) => {
       inputSettingsActions = actions;
       return {cameraContainer: {}, speechContainer: {}, showPresentation() {}, setStatus() {}};
     },
-    mountDeckUpload: () => ({setState() {}}), createUploadSession,
-    loadSlideDeck: async () => { throw new Error('No file in sensor tests'); },
+    mountDeckUpload: (_, actions) => {uploadActions=actions;return {setState() {}};}, createUploadSession,
+    loadSlideDeck: async () => ({name:'test.pdf',steps:slides(5),destroy(){}}),
     createSlidePresenter: () => ({show() {}, destroy() {}}),
     mountPresentation: (_, onIntent) => {
       dispatchIntent = onIntent;
@@ -58,7 +56,7 @@ async function harness() {
     createSpeechInput: options => {speechInput=options;return speech;},
   }, { filename: 'src/main.js' });
 
-  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,inputSettingsActions,cameraStates,speechStates,dispatchIntent,get state(){return state;}};
+  return {uploadActions,camera,speech,cameraActions,speechActions,cameraInput,speechInput,inputSettingsActions,cameraStates,speechStates,dispatchIntent,get state(){return state;}};
 }
 
 test('input mode switching is exclusive; rejected restart keeps the selected mode running', async () => {
@@ -66,10 +64,10 @@ test('input mode switching is exclusive; rejected restart keeps the selected mod
   h.cameraActions.onStart();assert.equal(h.camera.running,true);assert.equal(h.speech.running,false);
   h.speechActions.onStart();assert.equal(h.camera.running,false);assert.equal(h.speech.running,true);
   const before=h.state, cameraStops=h.camera.stops, speechStops=h.speech.stops;
-  h.dispatchIntent('COMMAND',{text:'はじめから'});
+  h.dispatchIntent('RESTART');
   assert.equal(h.state,before);assert.equal(h.camera.running,false);assert.equal(h.speech.running,true);
   assert.equal(h.camera.stops,cameraStops);assert.equal(h.speech.stops,speechStops);
-  h.dispatchIntent('COMMAND',{text:'停止'});
+  h.dispatchIntent('STOP');
   assert.equal(h.state.phase,'stopped');assert.equal(h.camera.running,false);assert.equal(h.speech.running,false);
 });
 
@@ -110,4 +108,12 @@ test('manual switch stops both inputs and rejects queued sensor decisions', asyn
   assert.equal(h.cameraInput.onDecision({...createManualEvent('NEXT',before),source:'camera'}),false);
   assert.equal(h.state,before);
   h.dispatchIntent('NEXT');assert.equal(h.state.step,1);
+});
+
+test('without imported slides, camera/voice start cannot start sensors; import prepares real count', async () => {
+ const h=await harness({empty:true});h.cameraActions.onStart();h.speechActions.onStart();
+ assert.equal(h.state.phase,'idle');assert.equal(h.camera.running,false);assert.equal(h.speech.running,false);
+ h.uploadActions.onSelect({name:'test.pdf',size:100,arrayBuffer(){}});await new Promise(r=>setImmediate(r));
+ assert.equal(h.state.stepCount,5);h.dispatchIntent('START');assert.equal(h.state.phase,'presenting');
+ const active=h.state;h.uploadActions.onSelect({name:'other.pdf'});await new Promise(r=>setImmediate(r));assert.equal(h.state,active);
 });

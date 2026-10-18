@@ -1,3 +1,4 @@
+import {slides} from './slides-fixture.js';
 import test, {afterEach} from 'node:test';
 const openVoices=[];
 afterEach(()=>{for(const voice of openVoices.splice(0))voice.dispose();});
@@ -8,14 +9,14 @@ import {createManualEvent} from '../src/input/manual.js';
 
 test('spoken commands normalize punctuation but reject descriptions, negation and lifecycle commands', () => {
   for (const text of ['次へ', ' 次へ。 ', '相棒、次へ！', '次 へ']) assert.deepEqual(parseSpeechCommand(text), {type:'NEXT'});
-  assert.deepEqual(parseSpeechCommand('２枚目へ。'), {type:'REQUEST_JUMP',targetStep:1});
+  assert.deepEqual(parseSpeechCommand('２枚目へ。', {stepCount:3}), {type:'REQUEST_JUMP',targetStep:1});
   for (const text of ['次へと言います','次へじゃない','次へ 前へ','準備','はじめから','検索 アイデア',null,'次へ'+' '.repeat(180)+'しない']) assert.equal(parseSpeechCommand(text), null);
 });
 
 function harness({unsupported = false, delayedAbort = false} = {}) {
   let at = 10000;
   const abortedEnds = [];
-  let state=createPresentationState();state=transitionPresentation(state,createManualEvent('START',state));
+  let state=createPresentationState(slides());state=transitionPresentation(state,createManualEvent('START',state));
   const instances=[],statuses=[],decisions=[];
   class Recognition {
     constructor(){this.aborted=0;instances.push(this);}
@@ -111,10 +112,10 @@ test('unsupported recognition and construction failure remain inactive', () => {
   assert.equal(statuses.at(-1).status,'error');
 });
 
-test('voice detour and resume preserve the selected search; STOP does not start another run', () => {
-  const h=harness();h.manual('NEXT');h.manual('SEARCH',{query:'チーム'});h.manual('SELECT',{selectedId:'team-board'});
+test('voice detour and resume preserve the original page; STOP does not start another run', () => {
+  const h=harness();h.manual('NEXT');
   h.voice.start();h.say('3枚目へ');h.say('確認');assert.equal(h.state.step,2);
-  h.say('続きへ');assert.equal(h.state.step,1);assert.equal(h.state.query,'チーム');assert.equal(h.state.selectedId,'team-board');
+  h.say('続きへ');assert.equal(h.state.step,1);
   const count=h.instances.length;h.say('停止');assert.equal(h.state.phase,'stopped');assert.equal(h.instances.length,count);
 });
 

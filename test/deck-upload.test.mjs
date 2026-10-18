@@ -3,6 +3,7 @@ import test from 'node:test';
 import { validateSlideFile, createUploadSession, createSlidePresenter, MAX_FILE_BYTES } from '../src/slides/upload.js';
 import { createPresentationState, transitionPresentation } from '../src/state/presentation.js';
 import { createManualEvent, parseCommand } from '../src/input/manual.js';
+import {slides} from './slides-fixture.js';
 import { parseSpeechCommand } from '../src/input/speech.js';
 
 const file = (name = 'slides.pdf', size = 100) => ({name, size, arrayBuffer: async () => new ArrayBuffer(size)});
@@ -36,18 +37,18 @@ test('failed imports preserve current deck and validate page count before applyi
 
 test('uploaded page count governs manual, voice, camera, detour and restart boundaries', () => {
   let state=createPresentationState();const send=(type,payload={},source='manual')=>state=transitionPresentation(state,{...createManualEvent(type,state,payload),source});
-  const epoch=state.sessionEpoch;send('LOAD_DECK',{stepCount:8});assert.equal(state.stepCount,8);assert.equal(state.sessionEpoch,epoch+1);
+  const epoch=state.sessionEpoch;send('LOAD_DECK',{slides:slides(8)});assert.equal(state.stepCount,8);assert.equal(state.sessionEpoch,epoch+1);
   send('START');for(let i=0;i<7;i++)send('NEXT',{},i%2?'voice':'camera');assert.equal(state.step,7);
   const last=state;send('NEXT');assert.equal(state,last);
   assert.deepEqual(parseCommand('8枚目へ',{stepCount:8}),{type:'REQUEST_JUMP',targetStep:7});
   assert.deepEqual(parseSpeechCommand('相棒、８枚目へ。',{stepCount:8}),{type:'REQUEST_JUMP',targetStep:7});
   assert.equal(parseCommand('9枚目へ',{stepCount:8}),null);
-  send('SEARCH',{query:'写真'});send('SELECT',{selectedId:'image-gallery'});send('REQUEST_JUMP',{targetStep:0});send('CONFIRM_JUMP');send('RESUME');
-  assert.equal(state.step,7);assert.equal(state.selectedId,'image-gallery');assert.equal(state.query,'写真');
-  const active=state;send('LOAD_DECK',{stepCount:2});assert.equal(state,active);
+  send('REQUEST_JUMP',{targetStep:0});send('CONFIRM_JUMP');send('RESUME');
+  assert.equal(state.step,7);assert.equal(state.resumeSnapshot,null);
+  const active=state;send('LOAD_DECK',{slides:slides(2)});assert.equal(state,active);
   send('STOP');send('RESTART');assert.equal(state.stepCount,8);assert.equal(state.step,0);
-  send('LOAD_DECK',{stepCount:1});send('START');const single=state;send('NEXT');assert.equal(state,single);
-  send('STOP');send('RESTART');send('LOAD_DECK',{stepCount:100});send('START');
+  send('LOAD_DECK',{slides:slides(1)});send('START');const single=state;send('NEXT');assert.equal(state,single);
+  send('STOP');send('RESTART');send('LOAD_DECK',{slides:slides(100)});send('START');
   assert.deepEqual(parseSpeechCommand('100枚目へ',{stepCount:100}),{type:'REQUEST_JUMP',targetStep:99});
   assert.equal(parseCommand('101枚目へ',{stepCount:100}),null);
   send('REQUEST_JUMP',{targetStep:99});send('CONFIRM_JUMP');assert.equal(state.step,99);

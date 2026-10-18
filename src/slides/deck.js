@@ -82,6 +82,7 @@ async function loadPptx(bytes, name, signal) {
       const host = document.createElement('div');
       host.className = 'pptx-page';
       host.style.aspectRatio = `${presentation.width} / ${presentation.height}`;
+      host.style.setProperty('--deck-ratio', String(presentation.width / presentation.height));
       host.setAttribute('role', 'img'); host.setAttribute('aria-label', `${name} ${index + 1}ページ目`);
       const surface = document.createElement('div');
       surface.className = 'pptx-render-surface'; host.append(surface);

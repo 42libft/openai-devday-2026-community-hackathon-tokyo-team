@@ -1,3 +1,4 @@
+import {slides} from './slides-fixture.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPresentationState, transitionPresentation as transition } from '../src/state/presentation.js';
@@ -6,7 +7,7 @@ const event = (state, type, source = 'manual', payload = {}) => ({...payload, ty
   eventId: crypto.randomUUID(), sessionEpoch: state.sessionEpoch, baseRevision: state.revision});
 
 test('camera can move but cannot start, confirm a detour, search, stop, or restart', () => {
-  const idle = createPresentationState();
+  const idle = createPresentationState(slides());
   assert.equal(transition(idle, event(idle, 'START', 'camera')), idle);
   const active = transition(idle, event(idle, 'START'));
   for (const type of ['START','SEARCH','CONFIRM_JUMP','REQUEST_JUMP','STOP','RESTART','UNDO'])
@@ -17,7 +18,7 @@ test('camera can move but cannot start, confirm a detour, search, stop, or resta
 });
 
 test('camera cannot cancel pending confirmation or apply after undo/stop/restart', () => {
-  let active = createPresentationState();
+  let active = createPresentationState(slides());
   active = transition(active, event(active, 'START'));
   const delayed = event(active, 'NEXT', 'camera');
   const pending = transition(active, event(active, 'REQUEST_JUMP', 'manual', {targetStep:2}));

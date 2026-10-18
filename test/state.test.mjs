@@ -1,289 +1,111 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { DEMO_ITEMS, STEPS, createPresentationState, transitionPresentation } from '../src/state/presentation.js';
+import {createPresentationState, transitionPresentation as transition} from '../src/state/presentation.js';
+import {createManualEvent, parseCommand} from '../src/input/manual.js';
+import {slides} from './slides-fixture.js';
+const act = (s, type, payload = {}) => transition(s, createManualEvent(type, s, payload));
+const start = (count = 5) => act(createPresentationState(slides(count)), 'START');
+const freeze = value => {if (value && typeof value === 'object') {Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
 
-let eventSequence = 0;
-const allIds = DEMO_ITEMS.map((item) => item.id);
-const envelope = (state, type, payload = {}) => ({
-  type, eventId: `event-${++eventSequence}`, sessionEpoch: state.sessionEpoch,
-  baseRevision: state.revision, source: 'manual', ...payload,
-});
-const act = (state, type, payload = {}) => transitionPresentation(state, envelope(state, type, payload));
-const start = () => act(createPresentationState(), 'START');
-const frame = ({ step, query, draftQuery, resultIds, selectedId }) => ({ step, query, draftQuery, resultIds, selectedId });
-
-function deepFreeze(value) {
-  if (value && typeof value === 'object') {
-    Object.freeze(value);
-    for (const child of Object.values(value)) deepFreeze(child);
-  }
-  return value;
-}
-
-test('three scripted steps run forward/backward within bounds, with a single undo', () => {
-  assert.deepEqual(STEPS.map((step) => step.id), ['intro', 'demo', 'summary']);
-  assert.ok(STEPS.every((step) => step.title && step.script));
-  let state = createPresentationState();
-  assert.equal(state.phase, 'idle');
-  assert.equal(state.sessionEpoch, 1);
-  assert.equal(state.revision, 0);
-  assert.deepEqual(state.resultIds, allIds);
-  for (const type of ['NEXT', 'PREVIOUS', 'SEARCH', 'UNDO', 'RESUME', 'RESTART']) {
-    assert.equal(act(state, type, { query: '' }), state);
-  }
-  state = act(state, 'START');
-  assert.equal(state.phase, 'presenting');
-  assert.equal(state.revision, 1);
-  assert.equal(act(state, 'PREVIOUS'), state);
-  assert.equal(act(state, 'START'), state);
-  state = act(state, 'NEXT');
-  assert.equal(state.step, 1);
-  state = act(state, 'NEXT');
-  assert.equal(state.step, 2);
-  assert.equal(act(state, 'NEXT'), state);
-  state = act(state, 'UNDO');
-  assert.equal(state.step, 1);
-  assert.equal(act(state, 'UNDO'), state);
-  state = act(state, 'PREVIOUS');
-  assert.equal(state.step, 0);
+test('empty preparation cannot start or move without imported slides', () => {
+  const state = createPresentationState();
+  for (const type of ['START','NEXT','PREVIOUS','REQUEST_JUMP','EDIT_NOTE','STOP']) assert.equal(act(state,type),state);
 });
 
-test('malformed, duplicate, stale, and unsupported event envelopes cannot change state', () => {
-  let state = start();
-  const invalid = [
-    null, undefined, [], {},
-    { eventId: '' }, { eventId: ' ' }, { eventId: ' leading' },
-    { eventId: 'bad\ninput' }, { eventId: 'x'.repeat(129) }, { eventId: 1 },
-    { baseRevision: state.revision - 1 }, { baseRevision: state.revision + 1 },
-    { baseRevision: undefined }, { baseRevision: '1' },
-    { sessionEpoch: 0 }, { sessionEpoch: undefined },
-    { source: 'untrusted-source' }, { source: undefined }, { type: 'AUTOPLAY' },
-  ];
-  for (const patch of invalid) {
-    const event = patch === null || patch === undefined || Array.isArray(patch) || Object.keys(patch).length === 0
-      ? patch : envelope(state, 'NEXT', patch);
-    assert.equal(transitionPresentation(state, event), state);
-  }
-  const next = envelope(state, 'NEXT');
-  state = transitionPresentation(state, next);
-  const progressed = state;
-  assert.equal(transitionPresentation(state, { ...next, baseRevision: state.revision }), state, 'duplicate ID remains invalid with a fresh revision');
-  state = act(state, 'UNDO');
-  assert.equal(transitionPresentation(state, { ...next, baseRevision: state.revision }), state, 'undo does not permit replay');
-  assert.equal(transitionPresentation(state, envelope(progressed, 'NEXT')), state, 'old revisions cannot replay after undo');
-  state = act(state, 'NEXT', { source: 'synthetic' });
-  assert.equal(state.step, 1);
-});
-
-test('search validates payloads, clears selection, and has predictable empty/no-result behavior', () => {
-  let state = start();
-  for (const query of [null, undefined, 42, [], 'x'.repeat(121)]) {
-    assert.equal(act(state, 'SEARCH', { query }), state);
-  }
-  state = act(state, 'SEARCH', { query: '写真' });
-  assert.deepEqual(state.resultIds, ['image-gallery']);
-  assert.equal(act(state, 'SELECT', { selectedId: 'event-guide' }), state);
-  assert.equal(act(state, 'SELECT', { selectedId: null }), state);
-  state = act(state, 'SELECT', { selectedId: 'image-gallery' });
-  assert.equal(state.selectedId, 'image-gallery');
-  assert.equal(act(state, 'SELECT', { selectedId: 'image-gallery' }), state);
-  state = act(state, 'SEARCH', { query: '該当作品のない検索語' });
-  assert.deepEqual(state.resultIds, []);
-  assert.equal(state.selectedId, null);
-  assert.match(state.message, /ありません/);
-  assert.equal(act(state, 'SELECT', { selectedId: 'image-gallery' }), state);
-  state = act(state, 'SEARCH', { query: '' });
-  assert.deepEqual(state.resultIds, allIds);
-  state = act(state, 'SEARCH', { query: '　 ' });
-  assert.deepEqual(state.resultIds, allIds);
-});
-
-test('confirmed detour restores the complete original frame after searching and stepping away', () => {
-  let state = act(start(), 'NEXT');
-  state = act(state, 'SEARCH', { query: '写真' });
-  state = act(state, 'SELECT', { selectedId: 'image-gallery' });
-  const original = structuredClone(frame(state));
-  const beforeProposal = state;
-  state = act(state, 'REQUEST_JUMP', { targetStep: 2 });
-  assert.deepEqual(frame(state), original, 'a proposal does not move the frame');
-  assert.equal(state.resumeSnapshot, null);
-  assert.deepEqual(state.pendingJump, { targetStep: 2 });
-  assert.equal(transitionPresentation(state, envelope(beforeProposal, 'CONFIRM_JUMP')), state, 'confirmation requires the current revision');
-  state = act(state, 'CONFIRM_JUMP');
-  assert.equal(state.step, 2);
-  assert.equal(state.query, '');
-  assert.deepEqual(state.resultIds, allIds);
-  assert.equal(state.selectedId, null);
-  assert.deepEqual(state.resumeSnapshot, original);
-  assert.equal(act(state, 'REQUEST_JUMP', { targetStep: 0 }), state, 'nested detours are rejected');
-  state = act(state, 'SEARCH', { query: 'ノート' });
-  state = act(state, 'SELECT', { selectedId: 'reading-note' });
-  state = act(state, 'PREVIOUS');
-  state = act(state, 'PREVIOUS');
-  state = act(state, 'NEXT');
-  assert.deepEqual(state.resumeSnapshot, original, 'ordinary operations never replace the return bookmark');
-  state = act(state, 'RESUME');
-  assert.deepEqual(frame(state), original);
-  assert.equal(state.resumeSnapshot, null);
-  assert.equal(state.pendingJump, null);
-  assert.equal(act(state, 'RESUME'), state);
-});
-
-test('search and selection undo each restore the last frame exactly once', () => {
-  let state = act(start(), 'SEARCH', { query: '写真' });
-  const searched = structuredClone(frame(state));
-  state = act(state, 'SELECT', { selectedId: 'image-gallery' });
-  state = act(state, 'UNDO');
-  assert.deepEqual(frame(state), searched);
-  assert.equal(state.undoSnapshot, null);
-  assert.equal(act(state, 'UNDO'), state);
-  state = act(state, 'SELECT', { selectedId: 'image-gallery' });
-  const selected = structuredClone(frame(state));
-  state = act(state, 'SEARCH', { query: 'ノート' });
-  state = act(state, 'UNDO');
-  assert.deepEqual(frame(state), selected);
-});
-
-test('undo of jump removes its bookmark; undo of resume restores detour plus original bookmark', () => {
-  let state = act(start(), 'SEARCH', { query: '写真' });
-  state = act(state, 'SELECT', { selectedId: 'image-gallery' });
-  const original = structuredClone(frame(state));
-  state = act(state, 'REQUEST_JUMP', { targetStep: 2 });
-  state = act(state, 'CONFIRM_JUMP');
-  state = act(state, 'UNDO');
-  assert.deepEqual(frame(state), original);
-  assert.equal(state.resumeSnapshot, null);
-  assert.equal(state.pendingJump, null);
-  assert.equal(act(state, 'UNDO'), state);
-
-  state = act(state, 'REQUEST_JUMP', { targetStep: 1 });
-  state = act(state, 'CONFIRM_JUMP');
-  state = act(state, 'SEARCH', { query: '案内' });
-  state = act(state, 'SELECT', { selectedId: 'event-guide' });
-  const detour = structuredClone(frame(state));
-  state = act(state, 'RESUME');
-  assert.deepEqual(frame(state), original);
-  state = act(state, 'UNDO');
-  assert.deepEqual(frame(state), detour);
-  assert.deepEqual(state.resumeSnapshot, original);
-  assert.equal(act(state, 'UNDO'), state, 'undo cannot toggle back to resumed state');
-  state = act(state, 'RESUME');
-  assert.deepEqual(frame(state), original);
-});
-
-test('jump cancellation and intervening frame changes invalidate pending confirmations', () => {
-  let state = start();
-  for (const targetStep of [-1, 3, 0, 1.5, '1', null, undefined]) {
-    assert.equal(act(state, 'REQUEST_JUMP', { targetStep }), state);
-  }
-  assert.equal(act(state, 'CONFIRM_JUMP'), state);
-  assert.equal(act(state, 'CANCEL_JUMP'), state);
-  state = act(state, 'REQUEST_JUMP', { targetStep: 2 });
-  const staleConfirmation = envelope(state, 'CONFIRM_JUMP');
-  state = act(state, 'CANCEL_JUMP');
-  assert.equal(state.pendingJump, null);
-  assert.equal(transitionPresentation(state, staleConfirmation), state);
-  assert.equal(act(state, 'CONFIRM_JUMP'), state);
-
-  for (const [type, payload] of [
-    ['NEXT', {}], ['SEARCH', { query: '写真' }],
-    ['SELECT', { selectedId: 'image-gallery' }], ['UNDO', {}],
-  ]) {
-    state = act(state, 'REQUEST_JUMP', { targetStep: 2 });
-    const confirm = envelope(state, 'CONFIRM_JUMP');
-    state = act(state, type, payload);
-    assert.equal(state.pendingJump, null, type);
-    assert.equal(transitionPresentation(state, confirm), state, type);
-    assert.equal(act(state, 'CONFIRM_JUMP'), state, type);
-  }
-});
-
-test('stop freezes the frame and cancels candidates; restart rejects previous-session inputs', () => {
-  let state = act(start(), 'SEARCH', { query: '写真' });
-  state = act(state, 'SELECT', { selectedId: 'image-gallery' });
-  const original = structuredClone(frame(state));
-  state = act(state, 'REQUEST_JUMP', { targetStep: 2 });
-  const queued = envelope(state, 'CONFIRM_JUMP');
-  state = act(state, 'STOP');
-  assert.equal(state.phase, 'stopped');
-  assert.deepEqual(frame(state), original);
-  assert.equal(state.pendingJump, null);
-  for (const type of ['START', 'NEXT', 'PREVIOUS', 'SEARCH', 'SELECT', 'REQUEST_JUMP', 'CONFIRM_JUMP', 'CANCEL_JUMP', 'RESUME', 'UNDO', 'STOP']) {
-    assert.equal(act(state, type, { query: '', selectedId: 'team-board', targetStep: 1 }), state, type);
-  }
-  assert.equal(transitionPresentation(state, queued), state);
-  const oldEpoch = state.sessionEpoch;
-  state = act(state, 'RESTART');
-  assert.equal(state.phase, 'idle');
-  assert.equal(state.sessionEpoch, oldEpoch + 1);
-  assert.equal(state.revision, 0);
-  assert.deepEqual(state.seen, []);
-  assert.equal(state.resumeSnapshot, null);
-  assert.equal(state.undoSnapshot, null);
-  assert.deepEqual(frame(state), frame(createPresentationState()));
-  assert.equal(transitionPresentation(state, { ...queued, type: 'START', baseRevision: 0 }), state);
-  state = act(state, 'START');
-  assert.equal(state.phase, 'presenting');
-  assert.equal(act(state, 'RESTART'), state);
-});
-
-test('frozen inputs stay unchanged and all result arrays/bookmarks are independent copies', () => {
-  const first = createPresentationState();
-  const second = createPresentationState();
-  assert.notEqual(first.resultIds, second.resultIds);
-  let state = deepFreeze(first);
-  for (const [type, payload] of [
-    ['START', {}], ['SEARCH', { query: '写真' }], ['SELECT', { selectedId: 'image-gallery' }],
-    ['REQUEST_JUMP', { targetStep: 2 }], ['CONFIRM_JUMP', {}], ['SEARCH', { query: 'ノート' }],
-    ['SELECT', { selectedId: 'reading-note' }], ['PREVIOUS', {}], ['RESUME', {}],
-    ['UNDO', {}], ['RESUME', {}], ['STOP', {}], ['RESTART', {}],
-  ]) {
-    const before = structuredClone(state);
-    const event = deepFreeze(envelope(state, type, payload));
-    const next = transitionPresentation(state, event);
-    assert.notEqual(next, state, type);
-    assert.deepEqual(state, before, type);
-    assert.notEqual(next.resultIds, state.resultIds, type);
-    if (next.resumeSnapshot) {
-      assert.notEqual(next.resumeSnapshot.resultIds, next.resultIds);
-      if (state.resumeSnapshot) assert.notEqual(next.resumeSnapshot.resultIds, state.resumeSnapshot.resultIds);
+test('actual page count controls navigation and voice jump bounds for 1, 5 and 100 slides', () => {
+  for (const count of [1,5,100]) {
+    let state = start(count);
+    assert.equal(act(state,'PREVIOUS'),state);
+    for (let page=1;page<count;page++) state=act(state,'NEXT');
+    assert.equal(state.step,count-1);assert.equal(act(state,'NEXT'),state);
+    const command=parseCommand(`${count + 1}枚目へ`, {stepCount:999});
+    assert.equal(act(state,command.type,command),state);
+    if(count>1){
+      state=act(state,'PREVIOUS');
+      const intent=parseCommand(`${count}枚目へ`, {stepCount:100});
+      state=transition(state,{...createManualEvent(intent.type,state,intent),source:'voice'});
+      assert.equal(state.pendingJump.targetStep,count-1);
+      state=act(state,'CONFIRM_JUMP');assert.equal(state.step,count-1);
     }
-    if (next.undoSnapshot) {
-      assert.notEqual(next.undoSnapshot.resultIds, state.resultIds);
-      if (next.undoSnapshot.resumeSnapshot) {
-        assert.notEqual(next.undoSnapshot.resumeSnapshot.resultIds, next.resumeSnapshot?.resultIds);
-      }
-    }
-    state = deepFreeze(next);
   }
-  assert.equal(first.phase, 'idle');
-  assert.deepEqual(first.seen, []);
-  assert.deepEqual(second.resultIds, allIds);
 });
 
-
-test('unsent search text is distinct from results and survives detour, resume and undo', () => {
-  let state=act(start(),'SEARCH',{query:'アイデア'});
-  state=act(state,'SELECT',{selectedId:'team-board'});
-  const previousUndo=state.undoSnapshot;
-  state=act(state,'EDIT_QUERY',{query:'イベント'});
-  assert.equal(state.draftQuery,'イベント');assert.equal(state.query,'アイデア');
-  assert.deepEqual(state.resultIds,['team-board']);assert.equal(state.selectedId,'team-board');
-  assert.deepEqual(state.undoSnapshot,previousUndo,'editing does not create a new undo operation');
-  const original=structuredClone(frame(state));
-  state=act(state,'REQUEST_JUMP',{targetStep:2});state=act(state,'CONFIRM_JUMP');
-  assert.equal(state.draftQuery,'');
-  state=act(state,'EDIT_QUERY',{query:'寄り道の入力'});
-  state=act(state,'RESUME');assert.deepEqual(frame(state),original);
-  state=act(state,'UNDO');assert.equal(state.draftQuery,'寄り道の入力');
-  state=act(state,'RESUME');assert.deepEqual(frame(state),original);
+test('preview and optional notes follow the actual page; start resets to page one', () => {
+  let state=createPresentationState(slides(5));
+  state=act(state,'PREVIEW',{targetStep:4});
+  state=act(state,'EDIT_NOTE',{notes:'質問への補足\nメモ'});
+  assert.equal(state.slides[4].notes,'質問への補足\nメモ');assert.equal(state.slides[0].notes,'');
+  for(const notes of [null,1,'x'.repeat(4001)])assert.equal(act(state,'EDIT_NOTE',{notes}),state);
+  state=act(state,'START');assert.equal(state.step,0);
+  assert.equal(act(state,'EDIT_NOTE',{notes:'発表中の変更'}),state);
+  state=act(act(state,'STOP'),'RESTART');assert.equal(state.slides[4].notes,'質問への補足\nメモ');
 });
 
-test('editing validates text; undo restores the input captured before the last committed action', () => {
+test('detour, movement, resume and single undo keep the original bookmark', () => {
+  let state=act(start(),'NEXT');
+  state=act(state,'REQUEST_JUMP',{targetStep:4});assert.equal(state.step,1);
+  state=act(state,'CONFIRM_JUMP');assert.equal(state.resumeSnapshot.step,1);
+  assert.equal(act(state,'REQUEST_JUMP',{targetStep:0}),state,'nested bookmark is rejected');
+  state=act(state,'PREVIOUS');state=act(state,'UNDO');assert.equal(state.step,4);assert.equal(state.resumeSnapshot.step,1);
+  assert.equal(act(state,'UNDO'),state);
+  state=act(state,'RESUME');assert.equal(state.step,1);assert.equal(state.resumeSnapshot,null);
+  state=act(state,'UNDO');assert.equal(state.step,4);assert.equal(state.resumeSnapshot.step,1);
+  state=act(state,'RESUME');assert.equal(state.step,1);
+});
+
+test('undoing detour restores location and removes bookmark; proposals do not overwrite undo', () => {
+  let state=act(start(),'NEXT');
+  state=act(state,'REQUEST_JUMP',{targetStep:4});state=act(state,'CANCEL_JUMP');
+  state=act(state,'UNDO');assert.equal(state.step,0);
+  state=act(state,'REQUEST_JUMP',{targetStep:4});state=act(state,'CONFIRM_JUMP');
+  state=act(state,'UNDO');assert.equal(state.step,0);assert.equal(state.resumeSnapshot,null);
+});
+
+test('invalid page requests and stale confirmations preserve state', () => {
   let state=start();
-  for(const query of [null,42,'x'.repeat(121)])assert.equal(act(state,'EDIT_QUERY',{query}),state);
-  state=act(state,'EDIT_QUERY',{query:'写真'});
-  assert.equal(act(state,'UNDO'),state,'typing alone is not an undoable committed action');
-  state=act(state,'SEARCH',{query:'写真'});state=act(state,'EDIT_QUERY',{query:'イベント'});
-  state=act(state,'UNDO');assert.equal(state.query,'');assert.equal(state.draftQuery,'写真');
+  for(const targetStep of [-1,5,0,1.2,'1',null,undefined])assert.equal(act(state,'REQUEST_JUMP',{targetStep}),state);
+  assert.equal(act(state,'CONFIRM_JUMP'),state);
+  state=act(state,'REQUEST_JUMP',{targetStep:4});
+  const old=createManualEvent('CONFIRM_JUMP',state);
+  state=act(state,'CANCEL_JUMP');assert.equal(transition(state,old),state);
+  state=act(state,'REQUEST_JUMP',{targetStep:4});state=act(state,'NEXT');
+  assert.equal(state.pendingJump,null);assert.equal(act(state,'CONFIRM_JUMP'),state);
+});
+
+test('failed deck replacement is atomic; valid replacement invalidates old sessions and history', () => {
+  let state=act(createPresentationState(slides(5)),'PREVIEW',{targetStep:4});const old=createManualEvent('START',state);
+  for(const deck of [[],slides(101),[null],Array(1),slides(2).map(s=>({...s,title:null})),[slides(1)[0],slides(1)[0]]]){
+    assert.equal(act(state,'LOAD_DECK',{slides:deck}),state);
+  }
+  const next=act(state,'LOAD_DECK',{slides:slides(1)});
+  assert.equal(next.phase,'idle');assert.equal(next.slides.length,1);assert.equal(next.step,0);
+  assert.equal(next.sessionEpoch,state.sessionEpoch+1);assert.equal(next.undoSnapshot,null);assert.equal(next.resumeSnapshot,null);
+  assert.equal(transition(next,{...old,baseRevision:0}),next);
+  const active=act(next,'START');assert.equal(act(active,'LOAD_DECK',{slides:slides(2)}),active);
+  assert.equal(act(next,'START').phase,'presenting');
+});
+
+test('stop freezes position and notes; restart retains deck and rejects old input', () => {
+  let state=act(start(),'NEXT');state=act(state,'REQUEST_JUMP',{targetStep:4});
+  const old=createManualEvent('NEXT',state);state=act(state,'STOP');
+  assert.equal(state.step,1);assert.equal(state.pendingJump,null);
+  for(const type of ['START','NEXT','PREVIOUS','UNDO','RESUME','STOP','EDIT_NOTE'])assert.equal(act(state,type),state);
+  const stopped=state;state=act(state,'RESTART');assert.equal(state.phase,'idle');assert.deepEqual(state.slides,stopped.slides);
+  assert.equal(state.sessionEpoch,stopped.sessionEpoch+1);assert.equal(state.revision,0);assert.equal(transition(state,old),state);
+});
+
+test('malformed, repeated, wrong-source and stale envelopes never change state', () => {
+  let state=start();const good=createManualEvent('NEXT',state);
+  for(const patch of [{eventId:''},{eventId:' bad'},{eventId:'a\nb'},{baseRevision:-1},{baseRevision:NaN},{sessionEpoch:0},{source:'unknown'},{type:'SEARCH'}])assert.equal(transition(state,{...good,...patch}),state);
+  for(const invalid of [null,[],true,'NEXT',{}])assert.equal(transition(state,invalid),state);
+  state=transition(state,good);assert.equal(transition(state,good),state);
+  for(const type of ['LOAD_DECK','EDIT_NOTE','PREVIEW','STOP','REQUEST_JUMP','UNDO'])assert.equal(transition(state,{...createManualEvent(type,state),source:'camera'}),state);
+});
+
+test('frozen state and events are not mutated through detour, undo and replacement', () => {
+  let state=freeze(createPresentationState(slides(5)));
+  for(const [type,payload] of [['START',{}],['NEXT',{}],['REQUEST_JUMP',{targetStep:4}],['CONFIRM_JUMP',{}],['PREVIOUS',{}],['RESUME',{}],['UNDO',{}],['STOP',{}],['RESTART',{}],['LOAD_DECK',{slides:slides(1)}]]){
+    const before=structuredClone(state);const next=transition(state,freeze(createManualEvent(type,state,payload)));
+    assert.notEqual(next,state,type);assert.deepEqual(state,before);state=freeze(next);
+  }
 });
