@@ -146,3 +146,15 @@ test('hiding the page stops inputs while showing it neither stops nor restarts t
   assert.equal(h.tracks.length, 2);
   assert.equal(h.recognitions.length, 2);
 });
+
+test('page departure and hiding cancel a silent-recognition retry before it can restart', t => {
+  const h=harness(t);h.speech.start();h.recognitions[0].onend();
+  h.visibility(true);t.mock.timers.tick(10000);
+  assert.equal(h.recognitions.length,1);
+  h.visibility(false);h.speech.start();h.recognitions[1].onerror({error:'no-speech'});
+  h.page('pagehide',true);h.page('pageshow',true);t.mock.timers.tick(10000);
+  assert.equal(h.recognitions.length,2);
+  h.speech.start();h.recognitions[2].onend();
+  h.page('pagehide',false);t.mock.timers.tick(10000);
+  assert.equal(h.recognitions.length,3);
+});
