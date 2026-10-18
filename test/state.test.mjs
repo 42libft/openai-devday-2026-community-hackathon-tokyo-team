@@ -57,7 +57,7 @@ test('malformed, duplicate, stale, and unsupported event envelopes cannot change
     { baseRevision: state.revision - 1 }, { baseRevision: state.revision + 1 },
     { baseRevision: undefined }, { baseRevision: '1' },
     { sessionEpoch: 0 }, { sessionEpoch: undefined },
-    { source: 'voice' }, { source: undefined }, { type: 'AUTOPLAY' },
+    { source: 'untrusted-source' }, { source: undefined }, { type: 'AUTOPLAY' },
   ];
   for (const patch of invalid) {
     const event = patch === null || patch === undefined || Array.isArray(patch) || Object.keys(patch).length === 0

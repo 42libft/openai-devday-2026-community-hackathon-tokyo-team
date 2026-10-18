@@ -4,14 +4,17 @@ import { createManualEvent, parseCommand, commandForKey } from './input/manual.j
 import { mountPresentation } from './ui/view.js';
 import { createCameraInput } from './input/camera.js';
 import { mountCameraPanel } from './ui/camera-panel.js';
+import { createSpeechInput } from './input/speech.js';
+import { mountSpeechPanel } from './ui/speech-panel.js';
 
 const root = document.getElementById('app');
 let controller;
 let camera;
+let speech;
 const view = mountPresentation(root, dispatchIntent);
 
 function dispatchIntent(type, payload = {}) {
-  if (type === 'STOP' || type === 'RESTART') camera?.stop();
+  if (type === 'STOP' || type === 'RESTART') { camera?.stop(); speech?.stop(); }
   if (type === 'COMMAND') {
     const intent = parseCommand(payload.text);
     if (!intent) {
@@ -73,8 +76,30 @@ camera = createCameraInput({
       : `AIカメラの判定で${event.type === 'NEXT' ? '次の' : '前の'}工程へ移りました。取り消しもできます。`);
   },
 });
-window.addEventListener('pagehide', () => camera.dispose());
-document.addEventListener('visibilitychange', () => { if (document.hidden) camera.stop(); });
+const speechContainer = document.createElement('section');
+speechContainer.setAttribute('aria-label', '音声操作');
+root.prepend(speechContainer);
+const speechPanel = mountSpeechPanel(speechContainer, {
+  onStart() {
+    if (controller.getState().phase === 'idle') dispatchIntent('START');
+    speech.start();
+  },
+  onStop: () => speech.stop(),
+});
+speech = createSpeechInput({
+  getState: controller.getState,
+  onStatus: speechPanel.setState,
+  onDecision(event) {
+    const previous = controller.getState();
+    const next = controller.dispatch(event);
+    if (next !== previous && event.type === 'STOP') { camera.stop(); speech.stop(); }
+    view.announce(next === previous ? '今の画面ではこの音声操作は使えません。工程や寄り道の状態を確認してください。' : next.message);
+    return next !== previous;
+  },
+});
+if (!speech.supported) speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'});
+window.addEventListener('pagehide', () => { camera.dispose(); speech.dispose(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { camera.stop(); speech.stop(); } });
 
 document.addEventListener('keydown', (event) => {
   const intent = commandForKey(event);

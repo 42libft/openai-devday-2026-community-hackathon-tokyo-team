@@ -83,6 +83,8 @@ function validEnvelope(state, event) {
     && Number.isSafeInteger(event.sessionEpoch) && event.sessionEpoch === state.sessionEpoch
     && Number.isSafeInteger(event.baseRevision) && event.baseRevision === state.revision
     && (event.source === 'manual' || event.source === 'synthetic'
+      || (event.source === 'voice' && ['NEXT','PREVIOUS','UNDO','RESUME','STOP','REQUEST_JUMP','CONFIRM_JUMP','CANCEL_JUMP'].includes(event.type)
+        && state.phase === 'presenting' && (state.pendingJump === null || ['CONFIRM_JUMP','CANCEL_JUMP','STOP'].includes(event.type)))
       || (event.source === 'camera' && ['NEXT', 'PREVIOUS'].includes(event.type)
         && state.phase === 'presenting' && state.pendingJump === null));
 }

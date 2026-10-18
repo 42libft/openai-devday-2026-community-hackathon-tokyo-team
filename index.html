@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f5f1">
-    <meta name="description" content="カメラの手の合図をDecisions APIで判定する発表の相棒。スライド進行、取消し、質問への寄り道と復帰をひとつの画面で。">
-    <title>発表の相棒 | 手の合図でスライド操作</title>
+    <meta name="description" content="声と手の合図で進める発表の相棒。カメラの手の合図をDecisions APIで判定し、日本語の音声操作、取消し、寄り道と復帰もひとつの画面で。">
+    <title>発表の相棒 | 声と手の合図でスライド操作</title>
     <link rel="stylesheet" href="./src/style.css">
+    <link rel="stylesheet" href="./src/speech.css">
     <script type="module" src="./src/main.js"></script>
   </head>
   <body>
     <main class="app-shell" data-smoke="team-workspace">
       <header class="site-header">
         <div class="brand"><span class="brand-symbol" aria-hidden="true">↗</span><div><h1>発表の相棒</h1><p class="brand-caption">PRESENTATION COMPANION</p></div></div>
-        <p class="build-label">手の合図で進める<span>3 STEPS</span></p>
+        <p class="build-label">声と手の合図で進める<span>3 STEPS</span></p>
       </header>
       <div id="app" aria-label="発表の操作画面"></div>
-      <footer class="site-footer"><p>発表の相棒 · カメラ画像からAIが判定</p><p>カメラ開始後だけ静止画をOpenAIへ送信します。停止すると送信も終了します。マイクは使用しません。</p></footer>
+      <footer class="site-footer"><p>発表の相棒 · 声と手の合図で進行</p><p>カメラ画像はOpenAI、音声はブラウザの認識機能を使います。それぞれの開始ボタンで同意し、停止できます。</p></footer>
       <noscript>このデモの操作にはJavaScriptを有効にしてください。</noscript>
     </main>
   </body>
