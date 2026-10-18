@@ -31,6 +31,7 @@ test('rejected restart preserves active inputs; accepted stop stops both inputs'
     createController, STEPS, createPresentationState, transitionPresentation,
     createManualEvent, parseCommand, commandForKey, bindInputLifecycle,
     document, window: new EventTarget(),
+    mountInputSettings: () => ({cameraContainer:{},speechContainer:{},setStatus() {},showPresentation() {}}),
     createScriptStore: (steps) => createScriptStore(steps, {getStorage: () => null}),
     mountScriptEditor: () => ({setState() {}}),
     mountPresentation: (_, onIntent) => {

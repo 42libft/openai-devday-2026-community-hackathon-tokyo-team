@@ -7,6 +7,7 @@ import { mountCameraPanel } from './ui/camera-panel.js';
 import { createSpeechInput } from './input/speech.js';
 import { mountSpeechPanel } from './ui/speech-panel.js';
 import { bindInputLifecycle } from './input/lifecycle.js';
+import { mountInputSettings } from './ui/input-settings.js';
 import { createScriptStore } from './script/storage.js';
 import { mountScriptEditor } from './ui/script-editor.js';
 
@@ -82,9 +83,13 @@ scriptEditor = mountScriptEditor(root.querySelector('#script-editor-slot'), {
   },
 });
 
-const cameraContainer = document.createElement('section');
-cameraContainer.setAttribute('aria-label', 'AIカメラ操作');
-root.prepend(cameraContainer);
+const inputSettings = mountInputSettings(root, {
+  onManual() {
+    camera?.stop(); speech?.stop();
+    view.announce('音声とカメラを停止しました。画面のボタンで発表を続けられます。');
+  },
+});
+const cameraContainer = inputSettings.cameraContainer;
 const cameraPanel = mountCameraPanel(cameraContainer, {
   onStart() {
     if (controller.getState().phase === 'idle') dispatchIntent('START');
@@ -92,6 +97,7 @@ const cameraPanel = mountCameraPanel(cameraContainer, {
       cameraPanel.setState({status: 'error', message: '「はじめから」で発表を準備してから再開してください。'});
       return;
     }
+    inputSettings.showPresentation();
     camera.start();
   },
   onStop: () => camera.stop(),
@@ -101,7 +107,7 @@ const cameraPanel = mountCameraPanel(cameraContainer, {
 camera = createCameraInput({
   video: cameraPanel.video,
   getState: controller.getState,
-  onStatus: cameraPanel.setState,
+  onStatus(update) { cameraPanel.setState(update); inputSettings.setStatus('camera', update); },
   onDecision(event) {
     const previous = controller.getState();
     const next = controller.dispatch(event);
@@ -110,19 +116,18 @@ camera = createCameraInput({
       : `AIカメラの判定で${event.type === 'NEXT' ? '次の' : '前の'}工程へ移りました。取り消しもできます。`);
   },
 });
-const speechContainer = document.createElement('section');
-speechContainer.setAttribute('aria-label', '音声操作');
-root.prepend(speechContainer);
+const speechContainer = inputSettings.speechContainer;
 const speechPanel = mountSpeechPanel(speechContainer, {
   onStart() {
     if (controller.getState().phase === 'idle') dispatchIntent('START');
+    if (controller.getState().phase === 'presenting') inputSettings.showPresentation();
     speech.start();
   },
   onStop: () => speech.stop(),
 });
 speech = createSpeechInput({
   getState: controller.getState,
-  onStatus: speechPanel.setState,
+  onStatus(update) { speechPanel.setState(update); inputSettings.setStatus('speech', update); },
   onDecision(event) {
     const previous = controller.getState();
     const next = controller.dispatch(event);
@@ -131,7 +136,7 @@ speech = createSpeechInput({
     return next !== previous;
   },
 });
-if (!speech.supported) speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'});
+if (!speech.supported) { inputSettings.setStatus('speech', {status:'unsupported'}); speechPanel.setState({supported:false,status:'unsupported',message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザ、または文字入力を使ってください。'}); }
 bindInputLifecycle({ window, document, inputs: [camera, speech] });
 
 document.addEventListener('keydown', (event) => {
