@@ -9,7 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 // No real sensor, OpenAI request, credentials, server startup or deployment.
 const url = process.env.APP_URL || 'http://127.0.0.1:4208/';
 const origin = new URL(url).origin;
-assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname), 'use a local preview URL');
+const authorizedPublicOrigin = 'https://devday-presentation-companion.vercel.app';
+assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname) || origin === authorizedPublicOrigin,
+  'use a local preview or the explicitly authorized public origin');
 const runName = `camera-browser-${new Date().toISOString().replace(/[:.]/gu, '-')}`;
 const evidence = process.env.EVIDENCE_DIR
   ? resolve(process.env.EVIDENCE_DIR)
