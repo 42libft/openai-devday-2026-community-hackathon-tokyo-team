@@ -1,4 +1,5 @@
 import { MAX_SLIDES } from './upload.js';
+import { createStaticPptxViewer, isExternalRelationship } from './pptx-preview.js';
 
 const makeSteps = count => Array.from({ length: count }, (_, i) => ({ id: `page-${i + 1}`, title: `${i + 1}ページ目`, script: '' }));
 function countCheck(count) {
@@ -54,9 +55,7 @@ export function stripExternalRelationships(xml) {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('Invalid relationships');
   for (const rel of [...doc.getElementsByTagNameNS('*', 'Relationship')]) {
-    const target = rel.getAttribute('Target') ?? '';
-    if (rel.getAttribute('TargetMode')?.toLowerCase() === 'external'
-      || /^(?:[a-z][a-z\d+.-]*:|\/\/)/iu.test(target)) rel.remove();
+    if (isExternalRelationship(rel.getAttribute('Target') ?? '', rel.getAttribute('TargetMode') ?? '')) rel.remove();
   }
   return new XMLSerializer().serializeToString(doc);
 }
@@ -85,7 +84,7 @@ async function loadPptx(bytes, name, signal) {
       host.setAttribute('role', 'img'); host.setAttribute('aria-label', `${name} ${index + 1}ページ目`);
       const surface = document.createElement('div');
       surface.className = 'pptx-render-surface'; host.append(surface);
-      const viewer = new PptxViewer(surface, { width: 1200, fitMode: 'contain', pdfjs: false });
+      const viewer = createStaticPptxViewer(surface, PptxViewer);
       const resize = new ResizeObserver(() => { surface.style.transform = `scale(${host.clientWidth / 1200})`; });
       resize.observe(host);
       const dispose = () => { resize.disconnect(); viewer.destroy(); viewers.delete(dispose); };

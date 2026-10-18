@@ -1,9 +1,9 @@
-import { STEPS, DEMO_ITEMS } from '../state/presentation.js';
+import { STEPS } from '../state/presentation.js';
 
 const PHASE_COPY = {
-  idle: { label: '開始前', context: '台本を確認してから、はじめましょう。', stage: '台本プレビュー' },
-  presenting: { label: '発表中', context: 'いま話すことを、ひとつずつ。', stage: 'いまの台本' },
-  stopped: { label: '停止中', context: '進行を停止しました。最後の状態を表示しています。', stage: '停止した台本' },
+  idle: { label: '開始前', context: '資料を読み込み、内容を確認して発表を始めましょう。', stage: '内容の確認' },
+  presenting: { label: '発表中', context: 'いま話すことを、ひとつずつ。', stage: '発表中のページ' },
+  stopped: { label: '停止中', context: '進行を停止しました。最後の状態を表示しています。', stage: '終了したページ' },
 };
 
 function textElement(tag, className, text) {
@@ -20,9 +20,10 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       <p id="workspace-context"></p>
       <span id="phase-label" class="phase-pill"></span>
     </div>
-    <nav class="step-navigation" aria-label="発表のページ"></nav>
     <div class="workspace-grid">
-      <section class="presentation-column" aria-label="台本と進行">
+      <section class="presentation-column" aria-label="スライドと進行">
+        <div id="deck-upload-slot" aria-label="スライドの読み込み"></div>
+        <nav class="step-navigation" aria-label="発表のページ"></nav>
         <section class="slide-stage" aria-labelledby="slide-title">
           <div class="slide-meta"><span id="stage-label"></span><span id="step-count"></span></div>
           <div class="slide-content" id="script-slide-content">
@@ -35,24 +36,20 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
           <div class="slide-footer"><span id="script-source">サンプル台本</span><span id="stage-footer-note"></span></div>
           <div class="slide-progress" aria-hidden="true"><span></span></div>
         </section>
-        <div id="deck-upload-slot" aria-label="スライドの読み込み"></div>
-        <div id="script-editor-slot" aria-label="台本の編集"></div>
         <div class="start-panel" id="start-panel">
           <p id="start-description"></p>
-          <button type="button" class="button-primary start-button" data-event="START">台本を確認して開始 <span aria-hidden="true">→</span></button>
+          <button type="button" class="button-primary start-button" data-event="START">内容を確認して発表開始 <span aria-hidden="true">→</span></button>
         </div>
+        <div id="script-editor-slot" aria-label="任意の台本編集"></div>
+        <section class="presentation-dock" aria-label="発表の操作と戻り先">
         <section class="jump-panel" id="jump-panel" aria-labelledby="jump-title" hidden>
-          <div><p class="panel-eyebrow">寄り道の確認</p><h3 id="jump-title"></h3><p>今の台本・検索・選択を保存して移動します。</p></div>
+          <div><p class="panel-eyebrow">寄り道の確認</p><h3 id="jump-title"></h3><p>今のページを戻り先として記憶します。</p></div>
           <div class="panel-actions"><button type="button" class="button-primary" data-event="CONFIRM_JUMP">移動する</button><button type="button" class="button-secondary" data-event="CANCEL_JUMP">キャンセル</button></div>
         </section>
         <section class="resume-panel" id="resume-panel" aria-label="寄り道から戻る" hidden>
           <div><span class="panel-eyebrow">寄り道中</span><p id="resume-description"></p></div>
           <button type="button" class="button-resume" data-event="RESUME">続きへ戻る <span aria-hidden="true">↩</span></button>
         </section>
-        <div class="stopped-panel" id="stopped-panel" hidden>
-          <p>終了した発表はこの位置から再開しません。「はじめから」で再準備できます。</p>
-          <button type="button" class="button-primary" data-event="RESTART">はじめから <span aria-hidden="true">↻</span></button>
-        </div>
         <section class="control-panel" aria-label="発表の操作">
           <div class="progress-controls">
             <button type="button" class="button-secondary" data-event="PREVIOUS"><span aria-hidden="true">←</span> 前へ</button>
@@ -60,38 +57,14 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
             <button type="button" class="button-quiet undo-button" data-event="UNDO"><span aria-hidden="true">↶</span> 取り消し</button>
           </div>
           <div class="status-row"><p id="demo-status" role="status" aria-live="polite" aria-atomic="true"></p><button type="button" class="button-stop" data-event="STOP" aria-describedby="presentation-stop-hint"><span class="stop-symbol" aria-hidden="true"></span> 発表を終了</button></div>
-          <p class="field-hint" id="presentation-stop-hint">発表を終了するとカメラ・音声も停止します。再開には「はじめから」で再準備が必要です。</p>
+          <p class="sr-only" id="presentation-stop-hint">発表を終了するとカメラ・音声も停止します。再開には「はじめから」で再準備が必要です。</p>
         </section>
-        <section class="command-panel" aria-labelledby="command-heading">
-          <div class="section-heading"><h3 id="command-heading">言葉で操作</h3><span>決まった言葉だけに対応</span></div>
-          <form id="command-form" class="inline-form">
-            <label for="command-text" class="sr-only">操作する言葉</label>
-            <input id="command-text" type="text" placeholder="例：次へ" autocomplete="off" aria-describedby="command-hint" maxlength="180">
-            <button type="submit" class="button-secondary" id="command-submit">操作する</button>
-          </form>
-          <p id="command-hint" class="field-hint">次へ / 取り消し / 続きへ / 1枚目へ</p>
         </section>
+        <div class="stopped-panel" id="stopped-panel" hidden>
+          <p>終了した発表はこの位置から再開しません。「はじめから」で再準備できます。</p>
+          <button type="button" class="button-primary" data-event="RESTART">はじめから <span aria-hidden="true">↻</span></button>
+        </div>
       </section>
-      <aside class="demo-column" aria-labelledby="search-heading">
-        <section class="search-panel">
-          <div class="section-heading"><div><p class="panel-eyebrow">LOCAL DEMO</p><h2 id="search-heading">資料を探す</h2></div><span class="local-badge">架空の資料</span></div>
-          <p class="section-description">検索して、発表で見せる資料を選択。</p>
-          <form id="search-form" class="search-form">
-            <label for="search-query">キーワード</label>
-            <div class="inline-form"><input id="search-query" type="search" placeholder="資料名・内容で検索" autocomplete="off" maxlength="120"><button type="submit" class="button-primary" id="search-submit">検索</button></div>
-          </form>
-          <div class="result-heading"><p id="search-summary"></p><span id="result-count"></span></div>
-          <div id="search-results" class="search-results" aria-label="検索結果"></div>
-          <p id="empty-results" class="empty-results" hidden>一致する資料はありません。<br>別のキーワードで探してください。</p>
-          <p id="search-availability" class="field-hint"></p>
-        </section>
-        <section class="selected-panel" aria-labelledby="selected-heading">
-          <p class="panel-eyebrow" id="selected-heading">選択中の資料</p>
-          <h3 id="selected-title"></h3>
-          <p id="selected-summary"></p>
-        </section>
-        <p class="demo-footnote">この画面内の架空データを検索します。寄り道から戻ると、検索と選択も元に戻ります。</p>
-      </aside>
     </div>`;
 
   const get = (selector) => root.querySelector(selector);
@@ -101,11 +74,7 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     stageNote: get('#stage-footer-note'), progress: get('.slide-progress span'), start: get('#start-panel'),
     jump: get('#jump-panel'), jumpTitle: get('#jump-title'), resume: get('#resume-panel'),
     resumeDescription: get('#resume-description'), stopped: get('#stopped-panel'), status: get('#demo-status'),
-    searchForm: get('#search-form'), search: get('#search-query'), searchSubmit: get('#search-submit'),
-    searchSummary: get('#search-summary'), resultCount: get('#result-count'), empty: get('#empty-results'),
-    availability: get('#search-availability'), selected: get('.selected-panel'),
-    selectedTitle: get('#selected-title'), selectedSummary: get('#selected-summary'),
-    commandForm: get('#command-form'), command: get('#command-text'), commandSubmit: get('#command-submit'), commandHint: get('#command-hint'),
+    dock: get('.presentation-dock'),
     scriptSource: get('#script-source'), scriptEditor: get('#script-editor-slot'),
     scriptContent: get('#script-slide-content'), uploaded: get('#uploaded-slide'), retry: get('.slide-render-retry'), startDescription: get('#start-description'),
   };
@@ -130,48 +99,29 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
     });
   }
   syncNavigation(getSteps());
-  const resultButtons = DEMO_ITEMS.map((item) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'result-button';
-    button.dataset.resultId = item.id;
-    button.setAttribute('aria-pressed', 'false');
-    const heading = document.createElement('span');
-    heading.className = 'result-title-row';
-    heading.append(textElement('span', 'result-title', item.title));
-    heading.append(textElement('span', 'result-mark', '+'));
-    button.append(heading, textElement('span', 'result-summary', item.summary));
-    get('#search-results').append(button);
-    return button;
-  });
   let destroyed = false;
   let renderError = false, previousDeck = null, previousPage = -1;
   const onClick = (event) => {
     const button = event.target.closest?.('button');
     if (!button || !root.contains(button) || button.disabled) return;
-    if (button.hasAttribute('data-result-id')) {
-      onIntent('SELECT', { selectedId: button.dataset.resultId });
-    } else if (button.dataset.event === 'REQUEST_JUMP') {
+    if (button.dataset.event === 'REQUEST_JUMP') {
       onIntent('REQUEST_JUMP', { targetStep: Number(button.dataset.stepTarget) });
     } else if (button.dataset.event) {
       onIntent(button.dataset.event, {});
     }
   };
-  const onEditQuery = () => {
-    if (!elements.search.disabled) onIntent('EDIT_QUERY', { query: elements.search.value });
-  };
-  const onSearch = (event) => {
-    event.preventDefault();
-    if (!elements.searchSubmit.disabled) onIntent('SEARCH', { query: elements.search.value });
-  };
-  const onCommand = (event) => {
-    event.preventDefault();
-    if (!elements.commandSubmit.disabled) onIntent('COMMAND', { text: elements.command.value });
-  };
   root.addEventListener('click', onClick);
-  elements.searchForm.addEventListener('submit', onSearch);
-  elements.search.addEventListener('input', onEditQuery);
-  elements.commandForm.addEventListener('submit', onCommand);
+  const page = root.ownerDocument.documentElement;
+  function syncDockSpace() {
+    const height = root.dataset.phase === 'presenting'
+      ? Math.ceil(elements.dock.getBoundingClientRect().height) : 0;
+    root.style.setProperty('--presentation-dock-height', `${height}px`);
+    page?.style.setProperty('--presentation-dock-height', `${height}px`);
+  }
+  const ResizeObserverClass = root.ownerDocument.defaultView?.ResizeObserver;
+  const dockObserver = ResizeObserverClass ? new ResizeObserverClass(syncDockSpace) : null;
+  dockObserver?.observe(elements.dock);
+  root.ownerDocument.defaultView?.addEventListener('resize', syncDockSpace);
 
   return {
     render(state) {
@@ -204,7 +154,11 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
       elements.uploaded.hidden = !deck;
       elements.retry.hidden = !deck || !renderError;
       get('.slide-stage').classList.toggle('has-uploaded-deck', Boolean(deck));
-      elements.startDescription.textContent = `全${steps.length}ページ。ボタン・声・手の合図で進行できます。`;
+      elements.startDescription.textContent = deck
+        ? `読み込んだ${steps.length}ページを確認したら、発表を開始してください。`
+        : hasCustomScript()
+          ? '編集した台本を確認して開始できます。資料ファイルを読み込むこともできます。'
+          : '資料ファイルを読み込むと、ここで内容を確認できます。サンプルで操作を試すこともできます。';
       const pageBadge = root.ownerDocument.querySelector('.build-label span');
       if (pageBadge) pageBadge.textContent = `${steps.length} PAGES`;
       onRenderSlide(deck, stepIndex, elements.uploaded);
@@ -247,45 +201,18 @@ export function mountPresentation(root, onIntent, { getSteps = () => STEPS, hasC
         else button.removeAttribute('aria-current');
         button.querySelector('.step-marker').textContent = current ? '現在' : '↗';
       });
-      elements.search.disabled = !canOperate;
-      elements.searchSubmit.disabled = !canOperate;
-      elements.command.disabled = false;
-      elements.commandSubmit.disabled = false;
-      elements.command.placeholder = state.phase === 'idle' ? '例：準備する' : state.phase === 'stopped' ? '例：はじめから' : '例：次へ';
-      elements.commandHint.textContent = state.phase === 'idle' ? '「準備する」で発表を開始できます。'
-        : state.phase === 'stopped' ? '「はじめから」で再準備します。停止中は進行しません。'
-          : '次へ / 取り消し / 続きへ / 1枚目へ';
-      if (elements.search.value !== state.draftQuery) elements.search.value = state.draftQuery ?? '';
-      const resultIds = new Set(state.resultIds ?? []);
-      elements.searchSummary.textContent = state.query ? `「${state.query}」の検索結果` : 'すべての資料';
-      elements.resultCount.textContent = `${resultIds.size}件`;
-      elements.empty.hidden = resultIds.size !== 0;
-      resultButtons.forEach((button) => {
-        const selected = button.dataset.resultId === state.selectedId;
-        button.hidden = !resultIds.has(button.dataset.resultId);
-        button.disabled = !canOperate;
-        button.classList.toggle('is-selected', selected);
-        button.setAttribute('aria-pressed', String(selected));
-        button.querySelector('.result-mark').textContent = selected ? '✓' : '+';
-      });
-      const selected = DEMO_ITEMS.find((item) => item.id === state.selectedId);
-      elements.selected.classList.toggle('has-selection', Boolean(selected));
-      elements.selectedTitle.textContent = selected?.title ?? 'まだ選択していません';
-      elements.selectedSummary.textContent = selected?.summary ?? '検索結果から資料をひとつ選べます。';
-      elements.availability.textContent = state.phase === 'idle'
-        ? '発表を開始すると、検索・選択を試せます。'
-        : state.phase === 'stopped' ? '停止時の検索・選択を表示しています。'
-          : pending ? '移動するかキャンセルすると操作できます。' : '空欄で検索すると、すべての資料を表示します。';
-      elements.status.textContent = state.message || phase.context;
+      elements.status.textContent = state.phase === 'idle' ? '内容を確認したら、発表を開始できます。' : state.message || phase.context;
+      syncDockSpace();
     },
-    announce(message) { if (!destroyed) elements.status.textContent = message; },
+    announce(message) { if (!destroyed) { elements.status.textContent = message; syncDockSpace(); } },
     setSlideError(value) { renderError = value; elements.retry.hidden = !getDeck() || !renderError; },
     destroy() {
       destroyed = true;
       root.removeEventListener('click', onClick);
-      elements.searchForm.removeEventListener('submit', onSearch);
-      elements.search.removeEventListener('input', onEditQuery);
-      elements.commandForm.removeEventListener('submit', onCommand);
+      dockObserver?.disconnect();
+      root.ownerDocument.defaultView?.removeEventListener('resize', syncDockSpace);
+      root.style.removeProperty('--presentation-dock-height');
+      page?.style.removeProperty('--presentation-dock-height');
     },
   };
 }

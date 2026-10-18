@@ -11,7 +11,7 @@ import { createUploadSession } from '../src/slides/upload.js';
 
 async function harness() {
   let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput, inputSettingsActions;
-  const cameraStates=[],speechStates=[];
+  const cameraStates=[],speechStates=[],inputModes=[],inputPhases=[],inputResults=[];
   const input = () => ({
     running: false,
     stops: 0,
@@ -37,7 +37,7 @@ async function harness() {
     mountScriptEditor: () => ({setState() {}}),
     mountInputSettings: (_, actions) => {
       inputSettingsActions = actions;
-      return {cameraContainer: {}, speechContainer: {}, showPresentation() {}, setStatus() {}};
+      return {cameraContainer: {}, speechContainer: {}, showPresentation() {}, setStatus() {}, setMode(mode) {inputModes.push(mode);}, setState(state) {inputPhases.push(state.phase);}, setResult(source,message) {inputResults.push({source,message});}};
     },
     mountDeckUpload: () => ({setState() {}}), createUploadSession,
     loadSlideDeck: async () => { throw new Error('No file in sensor tests'); },
@@ -58,7 +58,7 @@ async function harness() {
     createSpeechInput: options => {speechInput=options;return speech;},
   }, { filename: 'src/main.js' });
 
-  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,inputSettingsActions,cameraStates,speechStates,dispatchIntent,get state(){return state;}};
+  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,inputSettingsActions,cameraStates,speechStates,inputModes,inputPhases,inputResults,dispatchIntent,get state(){return state;}};
 }
 
 test('input mode switching is exclusive; rejected restart keeps the selected mode running', async () => {
@@ -110,4 +110,19 @@ test('manual switch stops both inputs and rejects queued sensor decisions', asyn
   assert.equal(h.cameraInput.onDecision({...createManualEvent('NEXT',before),source:'camera'}),false);
   assert.equal(h.state,before);
   h.dispatchIntent('NEXT');assert.equal(h.state.step,1);
+});
+
+
+test('inline recovery shares panel guards and publishes mode, result and phase', async () => {
+  const h=await harness();
+  assert.equal(h.inputSettingsActions.onCameraStart,h.cameraActions.onStart);
+  assert.equal(h.inputSettingsActions.onSpeechStart,h.speechActions.onStart);
+  h.inputSettingsActions.onSpeechStart();assert.equal(h.inputModes.at(-1),'voice');
+  h.speechInput.onDecision({...createManualEvent('NEXT',h.state),source:'voice'});
+  assert.equal(h.inputResults.at(-1).source,'voice');assert.ok(h.inputResults.at(-1).message);
+  h.inputSettingsActions.onCameraStart();assert.equal(h.inputModes.at(-1),'camera');assert.equal(h.speech.running,false);
+  h.inputSettingsActions.onManual();assert.equal(h.inputModes.at(-1),null);
+  h.dispatchIntent('STOP');assert.equal(h.inputPhases.at(-1),'stopped');
+  h.inputSettingsActions.onCameraStart();h.inputSettingsActions.onSpeechStart();
+  assert.equal(h.camera.running,false);assert.equal(h.speech.running,false);
 });

@@ -39,7 +39,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
     const previous = active;
     active = null;
     try { previous?.abort(); } catch { /* Already ended. */ }
-    notify({status: 'stopped', message});
+    notify(supported ? {status:'stopped',message} : {status:'unsupported',supported:false,message:'このブラウザは音声認識に対応していません。Chromeなどの対応ブラウザか、手動操作を使ってください。'});
   }
 
   function start(continuing = false) {

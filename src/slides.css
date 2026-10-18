@@ -15,3 +15,10 @@
 .pptx-render-surface { top: 0; left: 0; }
 .slide-render-retry { align-self: flex-end; margin-bottom: 10px; font-size: .7rem; min-height: 32px; }
 @media (max-width: 600px) { .deck-upload { padding: 14px; } .step-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* The import step precedes preview; long decks keep a bounded page navigator. */
+#deck-upload-slot .deck-upload { margin-top: 0; }
+[data-phase="presenting"] .step-navigation { max-height: min(140px, 22dvh); }
+.uploaded-slide, .pptx-page, .has-uploaded-deck { min-width: 0; max-width: 100%; }
+.has-uploaded-deck .slide-footer > span { min-width: 0; overflow-wrap: anywhere; }
+[data-phase="presenting"] .slide-stage { scroll-margin-bottom: calc(var(--presentation-dock-height, 160px) + 20px); }

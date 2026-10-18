@@ -13,12 +13,14 @@ export function mountSpeechPanel(container, {onStart, onStop}) {
   let state = {phase:'idle',status:'idle', transcript:'', supported:true};
   function setState(update) {
     state = {...state,...update};
+    if(state.status==='unsupported')state.supported=false;
+    if(!state.supported)state.status='unsupported';
     container.dataset.speechStatus = state.status;
     container.querySelector('[data-speech-status-label]').textContent = LABELS[state.status] ?? LABELS.idle;
     if (state.message || state.phase === 'stopped') container.querySelector('.speech-live-status').textContent = state.phase === 'stopped' ? '発表は終了しています。「はじめから」で準備に戻ってから音声を開始してください。' : state.message;
     container.querySelector('.speech-transcript span').textContent = state.transcript || '—';
     start.disabled = state.phase === 'stopped' || !state.supported || ['starting','listening'].includes(state.status);
-    start.textContent = state.phase === 'stopped' ? '再準備してから音声を開始' : '同意して音声を開始';
+    start.textContent = state.phase === 'stopped' ? '再準備してから音声を開始' : !state.supported ? '音声非対応' : ['error','stopped'].includes(state.status) ? '同意して音声を再開' : '同意して音声を開始';
   }
   setState({});
   return {setState, destroy() {start.removeEventListener('click',onStart);stop.removeEventListener('click',onStop);container.remove();}};
