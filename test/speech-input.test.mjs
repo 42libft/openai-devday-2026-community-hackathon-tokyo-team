@@ -25,6 +25,7 @@ function harness({unsupported = false} = {}) {
   const voice = createSpeechInput({Recognition:unsupported?null:Recognition,now:()=>at,makeId:()=>`speech-${instances.length}`,
     getState:()=>state,onStatus:s=>statuses.push(s),onDecision:e=>{decisions.push(e);const next=transitionPresentation(state,e);const changed=next!==state;state=next;return changed;}});
   return {voice,instances,statuses,decisions,get state(){return state;},advance:()=>at+=2000,
+    camera(type){state=transitionPresentation(state,{...createManualEvent(type,state),source:'camera'});},
     manual(type,payload={}){state=transitionPresentation(state,createManualEvent(type,state,payload));}};
 }
 
@@ -85,6 +86,22 @@ test('a late confirmation after overlapping speech cannot confirm a pending deto
   r.say('確認');
   assert.equal(h.state.step,0);assert.equal(h.state.pendingJump.targetStep,2);
   assert.equal(h.decisions.length,0);assert.equal(r.aborted,1);
+});
+
+test('STOP remains valid after a same-session manual or camera revision change', () => {
+  for(const source of ['manual','camera']) {
+    const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+    if(source==='camera')h.camera('NEXT');else h.manual('NEXT');
+    const revision=h.state.revision;
+    r.say('停止');assert.equal(h.state.phase,'stopped');
+    assert.equal(h.decisions.length,1);assert.equal(h.decisions[0].baseRevision,revision);
+  }
+});
+
+test('STOP from an earlier presentation session remains rejected', () => {
+  const h=harness();h.voice.start();const r=h.instances[0];r.onspeechstart();
+  h.manual('STOP');h.manual('RESTART');h.manual('START');
+  r.say('停止');assert.equal(h.state.phase,'presenting');assert.equal(h.decisions.length,0);
 });
 
 test('a stale batch stays rejected until a new speechstart, including its later result events', () => {
