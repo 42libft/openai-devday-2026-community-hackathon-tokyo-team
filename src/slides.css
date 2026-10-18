@@ -1,0 +1,17 @@
+.deck-upload { margin: 18px 0; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.deck-upload h3 { font-size: 1rem; margin-bottom: 8px; }
+.deck-upload p { font-size: .8rem; line-height: 1.7; margin: 8px 0; }
+.deck-upload label { display: block; font-size: .8rem; font-weight: 650; margin: 16px 0 8px; }
+.deck-upload input[type="file"] { max-width: 100%; font-size: .8rem; }
+.deck-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+#deck-status { color: var(--green); }
+#deck-status.is-error { color: #9c2929; }
+.step-navigation { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); max-height: 180px; overflow-y: auto; }
+.has-uploaded-deck { padding: 16px; min-height: 0; }
+.uploaded-slide { width: 100%; min-height: 120px; margin: 12px 0; overflow: hidden; background: #fff; color: var(--ink); }
+.uploaded-slide > p { padding: 24px; font-size: .9rem; }
+.uploaded-slide canvas { display: block; width: 100%; height: auto; }
+.pptx-page { position: relative; width: 100%; overflow: hidden; }
+.pptx-render-surface { top: 0; left: 0; }
+.slide-render-retry { align-self: flex-end; margin-bottom: 10px; font-size: .7rem; min-height: 32px; }
+@media (max-width: 600px) { .deck-upload { padding: 14px; } .step-navigation { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -46,7 +46,7 @@ export function createManualEvent(type, state, payload = {}) {
 }
 
 /** Parse only explicit commands; explanatory sentences have no action. */
-export function parseCommand(text) {
+export function parseCommand(text, { stepCount = 3 } = {}) {
   if (typeof text !== 'string' || text.length > 180) return null;
 
   const command = text.normalize('NFKC').trim();
@@ -55,8 +55,9 @@ export function parseCommand(text) {
   const type = COMMAND_TYPES.get(command);
   if (type) return { type };
 
-  const jump = /^([123])枚目へ$/u.exec(command);
-  if (jump) return { type: 'REQUEST_JUMP', targetStep: Number(jump[1]) - 1 };
+  const jump = /^([1-9]\d{0,2})枚目へ$/u.exec(command);
+  if (jump) return Number(jump[1]) <= stepCount
+    ? { type: 'REQUEST_JUMP', targetStep: Number(jump[1]) - 1 } : null;
 
   const search = /^検索\s+([\s\S]+)$/u.exec(command);
   if (!search) return null;

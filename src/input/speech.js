@@ -5,11 +5,11 @@ const WAIT_TIMEOUT_MESSAGE = '音声の確定待ちが6秒に達したため、�
 
 export const SPEECH_ACTIONS = new Set(['NEXT', 'PREVIOUS', 'UNDO', 'RESUME', 'STOP', 'REQUEST_JUMP', 'CONFIRM_JUMP', 'CANCEL_JUMP']);
 
-export function parseSpeechCommand(text) {
+export function parseSpeechCommand(text, options) {
   if (typeof text !== 'string' || text.length > 180) return null;
   let normalized = text.normalize('NFKC').trim().replace(/[。、,.!?！？\s]+$/u, '').replace(/\s+/gu, '');
   normalized = normalized.replace(/^相棒[、,]?/u, '');
-  const intent = parseCommand(normalized);
+  const intent = parseCommand(normalized, options);
   return intent && SPEECH_ACTIONS.has(intent.type) ? intent : null;
 }
 
@@ -128,7 +128,7 @@ export function createSpeechInput({ getState, onDecision, onStatus,
         cancelRunWait();
         if (now() >= deadline) { expire(); return; }
         restartOnEnd = true;
-        const intent = parseSpeechCommand(rawTranscript);
+        const intent = parseSpeechCommand(rawTranscript, { stepCount: getState().stepCount ?? 3 });
         const state = getState();
         const stale = state.phase !== 'presenting' || state.sessionEpoch !== utterance.sessionEpoch
           || (intent?.type !== 'STOP' && state.revision !== utterance.baseRevision);
