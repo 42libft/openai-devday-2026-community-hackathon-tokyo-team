@@ -10,6 +10,7 @@ import { createScriptStore } from '../src/script/storage.js';
 
 async function harness() {
   let dispatchIntent, state, cameraActions, speechActions, cameraInput, speechInput;
+  const cameraStates=[],speechStates=[];
   const input = () => ({
     running: false,
     stops: 0,
@@ -39,17 +40,17 @@ async function harness() {
     },
     mountCameraPanel: (_, actions) => {
       cameraActions = actions;
-      return { video: {}, setState() {} };
+      return { video: {}, setState(s) {cameraStates.push(s);} };
     },
     mountSpeechPanel: (_, actions) => {
       speechActions = actions;
-      return { setState() {} };
+      return { setState(s) {speechStates.push(s);} };
     },
     createCameraInput: options => {cameraInput=options;return camera;},
     createSpeechInput: options => {speechInput=options;return speech;},
   }, { filename: 'src/main.js' });
 
-  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,dispatchIntent,get state(){return state;}};
+  return {camera,speech,cameraActions,speechActions,cameraInput,speechInput,cameraStates,speechStates,dispatchIntent,get state(){return state;}};
 }
 
 test('input mode switching is exclusive; rejected restart keeps the selected mode running', async () => {
@@ -75,4 +76,19 @@ test('voice progress rejects a fresh-revision camera result until an explicit mo
   assert.equal(h.state.step,1);
   h.cameraInput.onDecision({...createManualEvent('NEXT',h.state),source:'camera'});
   assert.equal(h.state.step,2,'explicitly switching back enables the next camera operation');
+});
+
+
+test('presentation end blocks input restart until explicit preparation and notifies both panels', async () => {
+  const h=await harness();h.speechActions.onStart();h.dispatchIntent('STOP');
+  assert.equal(h.state.phase,'stopped');
+  assert.equal(h.cameraStates.at(-1).phase,'stopped');
+  assert.equal(h.speechStates.at(-1).phase,'stopped');
+  h.cameraActions.onStart();h.speechActions.onStart();
+  assert.equal(h.camera.running,false);assert.equal(h.speech.running,false);
+  h.dispatchIntent('RESTART');assert.equal(h.state.phase,'idle');
+  assert.equal(h.cameraStates.at(-1).phase,'idle');
+  assert.equal(h.speechStates.at(-1).phase,'idle');
+  h.speechActions.onStart();assert.equal(h.speech.running,true);
+  assert.equal(h.state.phase,'presenting');assert.equal(h.camera.running,false);
 });
